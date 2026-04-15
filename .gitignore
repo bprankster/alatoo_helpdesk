@@ -1,0 +1,33 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Vector store (reproduced via embedder.py)
+data/chromadb/
+
+# Uploaded PDFs (add manually or via pipeline)
+data/pdfs/
+
+# Whisper model cache
+~/.cache/huggingface/
+~/.cache/whisper/
+
+# Evaluation results (generated artifacts)
+evaluation/evaluation_results.json
+evaluation/audio_samples/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code internal files
+.claude/
+.claude.json

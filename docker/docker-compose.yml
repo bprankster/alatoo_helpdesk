@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+  agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: alatoo-agent
+    restart: unless-stopped
+    environment:
+      - XAI_API_KEY=${XAI_API_KEY}
+      - GROK_MODEL=${GROK_MODEL:-grok-3-mini}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - OFFICER_CHAT_ID=${OFFICER_CHAT_ID}
+      - TELEGRAM_WEBHOOK_URL=${TELEGRAM_WEBHOOK_URL}
+      - EMBEDDING_DEVICE=cpu
+      - WHISPER_MODEL_SIZE=${WHISPER_MODEL_SIZE:-medium}
+      - WHISPER_DEVICE=cpu
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    volumes:
+      # Persist vector store and uploaded PDFs across container restarts
+      - ./data/chromadb:/app/data/chromadb
+      - ./data/pdfs:/app/data/pdfs
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

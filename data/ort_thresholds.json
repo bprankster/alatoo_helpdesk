@@ -1,0 +1,95 @@
+{
+  "_note": "ORT minimum scores per program at Ala-Too University. Update after scraping or from official admissions docs. Scores are on the 0-260 scale.",
+  "programs": {
+    "Computer Science": {
+      "faculty": "CS",
+      "min_ort_score": 140,
+      "budget_seats": 10,
+      "paid_min_score": 110
+    },
+    "Software Engineering": {
+      "faculty": "CS",
+      "min_ort_score": 138,
+      "budget_seats": 8,
+      "paid_min_score": 108
+    },
+    "Information Technology": {
+      "faculty": "CS",
+      "min_ort_score": 130,
+      "budget_seats": 12,
+      "paid_min_score": 100
+    },
+    "Economics": {
+      "faculty": "Economics",
+      "min_ort_score": 125,
+      "budget_seats": 15,
+      "paid_min_score": 95
+    },
+    "Finance": {
+      "faculty": "Economics",
+      "min_ort_score": 122,
+      "budget_seats": 10,
+      "paid_min_score": 95
+    },
+    "Accounting": {
+      "faculty": "Economics",
+      "min_ort_score": 118,
+      "budget_seats": 10,
+      "paid_min_score": 90
+    },
+    "Business Administration": {
+      "faculty": "Business",
+      "min_ort_score": 120,
+      "budget_seats": 15,
+      "paid_min_score": 90
+    },
+    "Management": {
+      "faculty": "Business",
+      "min_ort_score": 118,
+      "budget_seats": 12,
+      "paid_min_score": 88
+    },
+    "Law": {
+      "faculty": "Law",
+      "min_ort_score": 135,
+      "budget_seats": 10,
+      "paid_min_score": 105
+    },
+    "International Relations": {
+      "faculty": "Law",
+      "min_ort_score": 140,
+      "budget_seats": 8,
+      "paid_min_score": 110
+    },
+    "Education (Primary)": {
+      "faculty": "Education",
+      "min_ort_score": 110,
+      "budget_seats": 20,
+      "paid_min_score": 85
+    },
+    "Psychology": {
+      "faculty": "Education",
+      "min_ort_score": 115,
+      "budget_seats": 15,
+      "paid_min_score": 88
+    },
+    "Design": {
+      "faculty": "Design",
+      "min_ort_score": 112,
+      "budget_seats": 10,
+      "paid_min_score": 85
+    },
+    "Architecture": {
+      "faculty": "Engineering",
+      "min_ort_score": 130,
+      "budget_seats": 8,
+      "paid_min_score": 100
+    },
+    "Civil Engineering": {
+      "faculty": "Engineering",
+      "min_ort_score": 125,
+      "budget_seats": 12,
+      "paid_min_score": 95
+    }
+  }
+}
