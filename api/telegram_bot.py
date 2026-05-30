@@ -123,11 +123,13 @@ async def telegram_webhook(request: Request) -> Response:
 
 
 async def set_webhook() -> None:
-    """Register the webhook URL with Telegram on startup."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_WEBHOOK_URL:
-        print("[telegram] Webhook not configured — skipping registration.")
+        print("[telegram] Webhook not configured — skipping.")
         return
-    bot = Bot(token=TELEGRAM_BOT_TOKEN)
-    webhook_url = f"{TELEGRAM_WEBHOOK_URL.rstrip('/')}/telegram"
-    await bot.set_webhook(url=webhook_url)
-    print(f"[telegram] Webhook registered: {webhook_url}")
+    try:
+        bot = Bot(token=TELEGRAM_BOT_TOKEN)
+        webhook_url = f"{TELEGRAM_WEBHOOK_URL.rstrip('/')}/telegram"
+        await bot.set_webhook(url=webhook_url)
+        print(f"[telegram] Webhook registered: {webhook_url}")
+    except Exception as e:
+        print(f"[telegram] Webhook registration failed: {e} — continuing without it.")
