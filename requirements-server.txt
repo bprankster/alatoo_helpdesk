@@ -1,0 +1,26 @@
+# ── requirements-server.txt ───────────────────────────────────────────────────
+# Ubuntu server only — requires Python 3.10-3.12 and pre-built binary wheels
+# that are NOT available for macOS Python 3.14:
+#   • torch/onnxruntime → no Python 3.14 wheels on PyPI
+#   • av (PyAV, used by faster-whisper) → build fails on Python 3.14
+#
+# Install on server AFTER requirements.txt:
+#
+#   pip install -r requirements.txt
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+#   pip install -r requirements-server.txt
+#   pip install -r requirements-classifier.txt   # only needed for training
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Dense embeddings
+sentence-transformers==3.4.1
+FlagEmbedding==1.3.4
+
+# Vector store (needs onnxruntime, no Python 3.14 wheels)
+chromadb==0.6.3
+
+# Voice STT (faster-whisper needs PyAV which fails to build on Python 3.14)
+faster-whisper==1.1.1
+
+# Kyrgyz TTS
+kani-tts

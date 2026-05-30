@@ -10,8 +10,11 @@ Routes:
   GET  /              — Gradio kiosk (mounted as ASGI sub-app)
 """
 
-import sys
 import os
+import sys
+
+import yaml
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from contextlib import asynccontextmanager
@@ -22,19 +25,48 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.chat_endpoint import router as chat_router
 from api.telegram_bot import router as telegram_router, set_webhook
-from config import API_HOST, API_PORT
+
+_cfg_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
+with open(_cfg_path) as _f:
+    _cfg = yaml.safe_load(_f)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Register Telegram webhook on startup
+    # Pre-load heavyweight models once at startup, not per-request
+    print("[startup] Loading embedding model…")
+    from data_ingestion.embedder import get_embedding_model
+    get_embedding_model()
+
+    print("[startup] Warming up LLM connection…")
+    from agent.core import get_llm
+    get_llm()
+
+    print("[startup] Loading STT model…")
+    try:
+        from voice.stt import _get_model
+        _get_model()
+    except Exception as e:
+        print(f"[startup] STT model not available: {e}")
+
+    print("[startup] Loading TTS model…")
+    try:
+        import tts.kani_tts as tts_mod
+        if tts_mod.is_enabled("web"):
+            tts_mod.load()
+    except Exception as e:
+        print(f"[startup] TTS model not available: {e}")
+
+    print("[startup] Registering Telegram webhook…")
     await set_webhook()
+
+    print("[startup] Ready.")
     yield
 
 
 app = FastAPI(
     title="Ala-Too University Admissions Agent",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -45,15 +77,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount API routers
 app.include_router(chat_router)
 app.include_router(telegram_router)
 
-# Mount Gradio kiosk UI at /kiosk
 from ui.kiosk import build_demo
 gradio_app = gr.mount_gradio_app(app, build_demo(), path="/kiosk")
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("api.main:app", host=API_HOST, port=API_PORT, reload=False)
+    uvicorn.run(
+        "api.main:app",
+        host=_cfg["api"]["host"],
+        port=_cfg["api"]["port"],
+        reload=False,
+    )

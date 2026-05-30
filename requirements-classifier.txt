@@ -1,0 +1,13 @@
+# ── requirements-classifier.txt ───────────────────────────────────────────────
+# KyrgyzBERT training dependencies — server only, install after torch.
+#
+# PyTorch must be installed first from the CUDA wheel index:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+#
+# Then:
+#   pip install -r requirements-classifier.txt
+# ─────────────────────────────────────────────────────────────────────────────
+
+# torch is installed separately (see above) — not listed here to avoid
+# pip trying the wrong index and failing.
+accelerate

@@ -1,16 +1,20 @@
 """
-guardrails.py — Input filter applied BEFORE any text reaches the Grok API.
+guardrails.py — Input filter applied BEFORE any text reaches the LLM.
 
 Two checks:
   1. Prompt injection detection → block immediately
   2. Domain bounding → warn agent if query is off-topic
 """
 
-import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from config import INJECTION_KEYWORDS, DOMAIN_KEYWORDS
+import yaml
 
+_cfg_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
+with open(_cfg_path) as _f:
+    _cfg = yaml.safe_load(_f)
+
+INJECTION_KEYWORDS: list[str] = _cfg["guardrails"]["injection_keywords"]
+DOMAIN_KEYWORDS: list[str] = _cfg["guardrails"]["domain_keywords"]
 
 INJECTION_BLOCK_REPLY = (
     "Извините, я не могу обработать этот запрос. "
@@ -29,13 +33,11 @@ OFF_TOPIC_REPLY = (
 
 
 def is_injection(text: str) -> bool:
-    """Return True if the input contains prompt-injection patterns."""
     lower = text.lower()
     return any(kw in lower for kw in INJECTION_KEYWORDS)
 
 
 def is_on_topic(text: str) -> bool:
-    """Return True if the input is plausibly related to admissions/orientation."""
     lower = text.lower()
     return any(kw in lower for kw in DOMAIN_KEYWORDS)
 

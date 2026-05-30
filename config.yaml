@@ -1,0 +1,115 @@
+llm:
+  model: "qwen3:14b"
+  base_url: "http://localhost:11434"
+  temperature: 0.1
+  num_predict: 512
+  num_ctx: 4096
+
+embeddings:
+  dense_model: "BAAI/bge-m3"
+  ablation_model: "intfloat/multilingual-e5-large"
+  device: "cuda"
+  normalize: true
+
+retrieval:
+  bm25_weight: 0.3
+  dense_weight: 0.7
+  top_k: 5
+
+chunking:
+  chunk_size: 500
+  chunk_overlap: 50
+
+chroma:
+  persist_dir: "./data/chromadb"
+  collection_name: "university_docs"
+
+classifier:
+  model_name: "metinovadilet/KyrgyzBert"
+  finetuned_path: "./classifier/model"
+  labels:
+    ort_validator: 0
+    orientation_engine: 1
+    program_comparator: 2
+    human_handoff: 3
+  confidence_threshold: 0.75
+
+stt:
+  model: "nineninesix/kyrgyz-whisper-medium"
+  device: "cuda"
+  compute_type: "float16"
+  contextual_bias: "Саламатсызбы, ОРТ, программист, факультет, экономика, медицина, юрист"
+
+tts:
+  model: "nineninesix/kani-tts-400m-ky"
+  enabled_platforms: ["web"]
+  output_dir: "./audio_responses"
+
+orientation:
+  max_questions: 5
+
+agent:
+  max_iterations: 10
+  thinking_tools: ["Professional_Orientation_Engine"]
+  fast_tools: ["ORT_Validator", "Program_Comparator_RAG", "Human_Handoff_Trigger"]
+  fallback_message: "Извините, у меня нет точного ответа на этот вопрос. Пожалуйста, обратитесь в приёмную комиссию: +996 555 820 000 (WhatsApp) или admission@alatoo.edu.kg"
+  use_classifier: false  # set true to enable KyrgyzBERT fast path; false = pure ReAct (for ablation A/B)
+
+telegram:
+  bot_token: ""
+  officer_chat_id: ""
+  webhook_url: ""
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+  session_ttl_seconds: 3600
+
+data:
+  riasec_mapping: "./data/riasec_mapping.json"
+  ort_thresholds: "./data/ort_thresholds.json"
+  raw_pdfs: "./data/raw/pdfs"
+  raw_manual: "./data/raw/manual"
+
+guardrails:
+  injection_keywords:
+    - "ignore previous"
+    - "ignore all"
+    - "jailbreak"
+    - "pretend you are"
+    - "act as"
+    - "system prompt"
+    - "forget your instructions"
+    - "you are now"
+    - "disregard"
+    - "override instructions"
+    - "100% скидка"
+    - "ты зачислен"
+    - "вы зачислены"
+  domain_keywords:
+    - "поступление"
+    - "факультет"
+    - "специальность"
+    - "орт"
+    - "ort"
+    - "стипендия"
+    - "скидка"
+    - "syllabus"
+    - "программа"
+    - "обучение"
+    - "университет"
+    - "аlatoo"
+    - "ала-тоо"
+    - "муа"
+    - "карьера"
+    - "профессия"
+    - "проходной балл"
+    - "tuition"
+    - "admissions"
+    - "faculty"
+    - "career"
+    - "бакалавр"
+    - "диплом"
+    - "кабылуу"
+    - "факультет"
+    - "адистик"

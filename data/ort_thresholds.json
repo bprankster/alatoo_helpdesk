@@ -1,95 +1,38 @@
 {
-  "_note": "ORT minimum scores per program at Ala-Too University. Update after scraping or from official admissions docs. Scores are on the 0-260 scale.",
-  "programs": {
-    "Computer Science": {
-      "faculty": "CS",
-      "min_ort_score": 140,
-      "budget_seats": 10,
-      "paid_min_score": 110
-    },
-    "Software Engineering": {
-      "faculty": "CS",
-      "min_ort_score": 138,
-      "budget_seats": 8,
-      "paid_min_score": 108
-    },
-    "Information Technology": {
-      "faculty": "CS",
-      "min_ort_score": 130,
-      "budget_seats": 12,
-      "paid_min_score": 100
-    },
-    "Economics": {
-      "faculty": "Economics",
-      "min_ort_score": 125,
-      "budget_seats": 15,
-      "paid_min_score": 95
-    },
-    "Finance": {
-      "faculty": "Economics",
-      "min_ort_score": 122,
-      "budget_seats": 10,
-      "paid_min_score": 95
-    },
-    "Accounting": {
-      "faculty": "Economics",
-      "min_ort_score": 118,
-      "budget_seats": 10,
-      "paid_min_score": 90
-    },
-    "Business Administration": {
-      "faculty": "Business",
-      "min_ort_score": 120,
-      "budget_seats": 15,
-      "paid_min_score": 90
-    },
-    "Management": {
-      "faculty": "Business",
-      "min_ort_score": 118,
-      "budget_seats": 12,
-      "paid_min_score": 88
-    },
-    "Law": {
-      "faculty": "Law",
-      "min_ort_score": 135,
-      "budget_seats": 10,
-      "paid_min_score": 105
-    },
-    "International Relations": {
-      "faculty": "Law",
-      "min_ort_score": 140,
-      "budget_seats": 8,
-      "paid_min_score": 110
-    },
-    "Education (Primary)": {
-      "faculty": "Education",
-      "min_ort_score": 110,
-      "budget_seats": 20,
-      "paid_min_score": 85
-    },
-    "Psychology": {
-      "faculty": "Education",
-      "min_ort_score": 115,
-      "budget_seats": 15,
-      "paid_min_score": 88
-    },
-    "Design": {
-      "faculty": "Design",
-      "min_ort_score": 112,
-      "budget_seats": 10,
-      "paid_min_score": 85
-    },
-    "Architecture": {
-      "faculty": "Engineering",
-      "min_ort_score": 130,
-      "budget_seats": 8,
-      "paid_min_score": 100
-    },
-    "Civil Engineering": {
-      "faculty": "Engineering",
-      "min_ort_score": 125,
-      "budget_seats": 12,
-      "paid_min_score": 95
-    }
+  "_note": "Official Ala-Too University ORT-based discount system 2024-2025. No budget places — private university.",
+  "min_ort_threshold": 110,
+  "discount_table": [
+    {"score_range": "gold_certificate", "discount_percent": 100},
+    {"score_range": "216-220", "discount_percent": 50},
+    {"score_range": "211-215", "discount_percent": 45},
+    {"score_range": "206-210", "discount_percent": 40},
+    {"score_range": "201-205", "discount_percent": 35},
+    {"score_range": "196-200", "discount_percent": 30},
+    {"score_range": "191-195", "discount_percent": 25},
+    {"score_range": "186-190", "discount_percent": 20},
+    {"score_range": "181-185", "discount_percent": 15},
+    {"score_range": "176-180", "discount_percent": 10},
+    {"score_range": "171-175", "discount_percent": 5}
+  ],
+  "other_discounts": [
+    "Выпускникам колледжа МУА: 10%",
+    "Выпускникам IT&Business колледжа МУА с красным дипломом: 20%",
+    "Выпускникам лицеев МОУ Сапат: 15%",
+    "Сиротам (оба родителя): 40%",
+    "Потеря одного родителя: 10%",
+    "Семьи с 4+ детьми до 22 лет: 10%"
+  ],
+  "notes": [
+    "Скидка прекращается при 4 академических задолженностях в семестре",
+    "Студент может использовать только одну скидку",
+    "Оплата принимается только в национальной валюте по курсу НБКР",
+    "Первоначальный платеж: 30% от стоимости обучения",
+    "Можно платить по 50% в начале каждого семестра",
+    "ОРТ прошлых лет использовать НЕЛЬЗЯ",
+    "Подача через портал МОН КР: 2020.edu.gov.kg/vuz"
+  ],
+  "additional_subject_requirements": {
+    "Факультет инженерии и информатики": {"math": 60, "physics": 60},
+    "Медицинский факультет": {"biology": 60, "chemistry": 60}
   }
 }

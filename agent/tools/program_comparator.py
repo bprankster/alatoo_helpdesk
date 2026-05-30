@@ -9,43 +9,65 @@ import os
 import re
 import sys
 
-from langchain.tools import Tool
+import yaml
+from langchain_core.tools import Tool
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-from config import RETRIEVAL_TOP_K
 
-# Faculty aliases for metadata filtering
+_cfg_path = os.path.join(os.path.dirname(__file__), "..", "..", "config.yaml")
+with open(_cfg_path) as _f:
+    _cfg = yaml.safe_load(_f)
+
+# Updated aliases matching real MUA faculty names
 FACULTY_ALIASES: dict[str, str] = {
-    "cs": "CS", "computer science": "CS", "информатика": "CS",
-    "software": "CS", "it": "CS",
-    "economics": "Economics", "экономика": "Economics",
-    "finance": "Economics", "финансы": "Economics",
-    "business": "Business", "бизнес": "Business",
-    "management": "Business", "менеджмент": "Business",
-    "law": "Law", "право": "Law", "юридический": "Law",
-    "education": "Education", "педагогика": "Education",
-    "psychology": "Education", "психология": "Education",
-    "design": "Design", "дизайн": "Design",
-    "engineering": "Engineering", "инженерия": "Engineering",
-    "architecture": "Engineering", "архитектура": "Engineering",
+    "инженер": "Факультет инженерии и информатики",
+    "информатик": "Факультет инженерии и информатики",
+    "it": "Факультет инженерии и информатики",
+    "cs": "Факультет инженерии и информатики",
+    "computer": "Факультет инженерии и информатики",
+    "программирован": "Факультет инженерии и информатики",
+    "data science": "Факультет инженерии и информатики",
+    "ии": "Факультет инженерии и информатики",
+    "кибербезопасност": "Факультет инженерии и информатики",
+    "робот": "Факультет инженерии и информатики",
+    "экономик": "Факультет экономики и управления",
+    "менеджмент": "Факультет экономики и управления",
+    "management": "Факультет экономики и управления",
+    "финанс": "Факультет экономики и управления",
+    "юридическ": "Факультет экономики и управления",
+    "право": "Факультет экономики и управления",
+    "law": "Факультет экономики и управления",
+    "туризм": "Факультет экономики и управления",
+    "гостеприимств": "Факультет экономики и управления",
+    "экология": "Факультет экономики и управления",
+    "лингвистик": "Факультет гуманитарных наук",
+    "перевод": "Факультет гуманитарных наук",
+    "филолог": "Факультет гуманитарных наук",
+    "педагогик": "Факультет гуманитарных наук",
+    "stem": "Факультет гуманитарных наук",
+    "медицин": "Медицинский факультет",
+    "лечебн": "Медицинский факультет",
+    "medicine": "Медицинский факультет",
+    "психолог": "Факультет социальных наук",
+    "журналистик": "Факультет социальных наук",
+    "международн": "Факультет социальных наук",
+    "social": "Факультет социальных наук",
 }
 
-# Patterns to split "compare X and Y" or "X vs Y"
 COMPARE_PATTERN = re.compile(
-    r"(?:сравни|сравните|compare|versus|vs\.?|и|and|,)\s+",
+    r"(?:сравни|сравните|compare|versus|vs\.?|и\s|and\s|,)\s*",
     re.IGNORECASE,
 )
 
 
 def _extract_programs(text: str) -> list[str]:
-    """Pull program names from a comparison query."""
     lower = text.lower()
-    # Remove common preamble
-    for prefix in ["сравни программы", "сравните", "compare programs", "compare", "сравни"]:
+    for prefix in ["сравни программы", "сравни факультеты", "сравните",
+                   "compare programs", "compare faculties", "compare", "сравни"]:
         lower = lower.replace(prefix, "")
     parts = COMPARE_PATTERN.split(lower.strip())
     programs = [p.strip() for p in parts if p.strip()]
-    return programs[:4]   # cap at 4 programs
+    return programs[:4]
 
 
 def _resolve_faculty(program_text: str) -> str | None:
@@ -60,9 +82,10 @@ def program_comparator(input_text: str) -> str:
     """
     Compare two or more university programs using ChromaDB retrieval.
 
-    Input example: "Сравни CS и Economics"
+    Use when student asks to compare programs.
+    Do NOT use for ORT score checks or career guidance.
+    Input: comparison request as full sentence.
     """
-    # Lazy import to avoid loading ChromaDB at module level
     from data_ingestion.embedder import query_collection
 
     programs = _extract_programs(input_text)
@@ -70,17 +93,19 @@ def program_comparator(input_text: str) -> str:
     if len(programs) < 2:
         return (
             "Пожалуйста, укажите минимум две специальности для сравнения. "
-            "Например: «Сравни CS и Economics» или «Compare Law and Business»."
+            "Например: «Сравни IT и экономику» или «Compare психологию и журналистику»."
         )
 
+    top_k = _cfg["retrieval"]["top_k"]
     sections: list[str] = []
+
     for prog in programs:
         faculty = _resolve_faculty(prog)
         where = {"faculty": faculty} if faculty else None
 
         results = query_collection(
-            query_text=f"program description curriculum tuition {prog}",
-            n_results=RETRIEVAL_TOP_K,
+            query_text=f"программа учебный план карьера специальность {prog}",
+            n_results=top_k,
             where=where,
         )
 
@@ -88,9 +113,7 @@ def program_comparator(input_text: str) -> str:
             sections.append(f"### {prog.title()}\n_Информация не найдена в базе данных._")
             continue
 
-        # Stitch retrieved chunks into a summary
         combined = "\n".join(r["text"] for r in results)
-        # Trim to avoid overly long output
         if len(combined) > 800:
             combined = combined[:800] + "…"
 
@@ -100,7 +123,7 @@ def program_comparator(input_text: str) -> str:
     body = "\n\n---\n\n".join(sections)
     footer = (
         "\n\n---\n_Информация получена из базы данных Ала-Тоо Университета. "
-        "Для точных деталей обратитесь в приёмную комиссию._"
+        "Для точных деталей обратитесь в приёмную комиссию: +996 555 820 000_"
     )
     return header + body + footer
 
@@ -110,8 +133,10 @@ program_comparator_tool = Tool(
     func=program_comparator,
     description=(
         "Use this tool when a student wants to compare two or more university programs "
-        "or faculties side by side (e.g. 'Compare CS and Economics', "
-        "'Сравни юридический и бизнес'). "
-        "Input: the student's comparison request as a full sentence."
+        "or faculties side by side. "
+        "Examples: 'Сравни IT и экономику', 'Compare психологию и журналистику', "
+        "'Что лучше — медицина или инженерия?'. "
+        "Input: the student's comparison request as a full sentence. "
+        "Do NOT use for ORT score checks or when student is undecided about career path."
     ),
 )

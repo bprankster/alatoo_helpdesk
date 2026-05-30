@@ -1,25 +1,31 @@
+# ── requirements.txt ──────────────────────────────────────────────────────────
+# Safe to install on macOS Python 3.14 and Ubuntu server.
+# GPU / torch / onnxruntime packages are in requirements-server.txt
+# ─────────────────────────────────────────────────────────────────────────────
+
 # LLM & Agent
 langchain==0.3.25
-langchain-openai==0.3.16
 langchain-community==0.3.24
+langchain-ollama
+langchain-huggingface
 langgraph==0.4.1
+langchain-text-splitters==0.3.8
 
-# Embeddings (local)
-sentence-transformers==3.4.1
-FlagEmbedding==1.3.4
+# Sparse retrieval
+rank_bm25
 
-# Vector store
-chromadb==0.6.3
+# Intent classifier — tokenizer and inference (torch loaded lazily at runtime)
+transformers
 
-# Data ingestion
+# Evaluation
+scikit-learn
+jiwer==3.0.5
+
+# Data ingestion — pure-Python / pre-built wheels
 requests==2.32.3
 beautifulsoup4==4.13.4
 lxml==5.4.0
 pypdf==5.4.0
-langchain-text-splitters==0.3.8
-
-# Voice / STT
-faster-whisper==1.1.1
 
 # API backend
 fastapi==0.115.12
@@ -37,6 +43,4 @@ python-dotenv==1.1.0
 httpx==0.28.1
 aiofiles==24.1.0
 pydantic==2.11.3
-
-# Evaluation
-jiwer==3.0.5        # WER computation
+pyyaml

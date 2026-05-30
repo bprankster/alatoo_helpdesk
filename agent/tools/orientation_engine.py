@@ -1,9 +1,10 @@
 """
 orientation_engine.py — Tool B: Professional_Orientation_Engine
 
-Stateful RIASEC 5-question survey that maps the student's answers to
-Ala-Too University faculties. Reads/writes from the active SessionState.
-Hard-capped at exactly 5 questions, then forces a faculty recommendation.
+Adaptive 5-question RIASEC survey using LLM-generated questions.
+Each question is generated dynamically based on previous answers,
+targeting the most uncertain RIASEC dimensions (Qwen3 with /think mode).
+Maps final result to real MUA faculty names from riasec_mapping.json.
 """
 
 import json
@@ -11,62 +12,214 @@ import os
 import sys
 from collections import Counter
 
-from langchain.tools import Tool
+import yaml
+from langchain_core.tools import Tool
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-from config import RIASEC_MAPPING_FILE, RIASEC_MAX_QUESTIONS
 
+_cfg_path = os.path.join(os.path.dirname(__file__), "..", "..", "config.yaml")
+with open(_cfg_path) as _f:
+    _cfg = yaml.safe_load(_f)
 
-def _load_mapping() -> dict:
-    with open(RIASEC_MAPPING_FILE, encoding="utf-8") as f:
-        return json.load(f)
-
-
+MAX_QUESTIONS: int = _cfg["orientation"]["max_questions"]
 VALID_ANSWERS = {"R", "I", "A", "S", "E", "C"}
 
 
+def _load_mapping() -> dict:
+    with open(_cfg["data"]["riasec_mapping"], encoding="utf-8") as f:
+        return json.load(f)
+
+
 def _extract_answer(text: str) -> str | None:
-    """Pull a single RIASEC letter from the user's response."""
+    """Pull a RIASEC letter from user response, or detect option number (1-4)."""
     upper = text.strip().upper()
+    # Direct letter answer
     for char in upper:
         if char in VALID_ANSWERS:
             return char
+    # Numeric answer "1", "2", "3", "4" — will be resolved by the caller
+    # using the current question's option list
     return None
 
 
 def _compute_result(answers: list[str]) -> tuple[str, list[str]]:
-    """Return the top-2 RIASEC types and the corresponding faculty list."""
+    """Return top-2 RIASEC types and matching MUA faculty names."""
     mapping = _load_mapping()
     counts = Counter(answers)
     top2 = [t for t, _ in counts.most_common(2)]
     riasec_type = "".join(top2)
 
     faculties: list[str] = []
+    riasec_to_faculty = mapping.get("riasec_to_faculty", {})
     for t in top2:
-        faculties.extend(mapping["mapping"].get(t, {}).get("faculties", []))
+        faculties.extend(riasec_to_faculty.get(t, []))
 
-    # Deduplicate while preserving order
     seen: set[str] = set()
-    unique_faculties = [f for f in faculties if not (f in seen or seen.add(f))]
-    return riasec_type, unique_faculties
+    unique = [f for f in faculties if not (f in seen or seen.add(f))]
+    return riasec_type, unique
+
+
+def _generate_next_question(history: list[dict]) -> dict:
+    """
+    Use Qwen3 (thinking mode) to generate the next adaptive RIASEC question.
+
+    Returns a dict: {question: str, options: [{text: str, riasec: str}]}
+    Falls back to a safe static question if LLM call fails.
+    """
+    from agent.core import get_llm, format_prompt
+
+    is_first = len(history) == 0
+    history_text = "\n".join(
+        f"Q{i+1}: {h['question']}\nОтвет: {h['answer']} ({h.get('riasec', '?')})"
+        for i, h in enumerate(history)
+    )
+
+    if is_first:
+        context = "Это первый вопрос — широкий, ситуационный, о предпочтениях студента."
+    else:
+        context = (
+            f"Предыдущие ответы:\n{history_text}\n\n"
+            "Определи неясные RIASEC-типы. Задай наиболее дискриминирующий следующий вопрос."
+        )
+
+    prompt_text = (
+        "Ты консультант по профориентации (Holland RIASEC: "
+        "R=Реалистичный I=Исследовательский A=Артистический "
+        "S=Социальный E=Предприимчивый C=Конвенциональный).\n"
+        f"{context}\n"
+        f"Вопрос №{len(history)+1} из {MAX_QUESTIONS}. На русском языке. Ситуационный. "
+        "Ровно 4 варианта ответа — каждый отражает разный RIASEC-тип.\n"
+        "Верни ТОЛЬКО валидный JSON без markdown-обёртки:\n"
+        '{"question":"текст вопроса","options":['
+        '{"text":"вариант А","riasec":"R"},'
+        '{"text":"вариант Б","riasec":"I"},'
+        '{"text":"вариант В","riasec":"A"},'
+        '{"text":"вариант Г","riasec":"S"}]}'
+    )
+
+    llm = get_llm(thinking=True)
+    try:
+        raw = llm.invoke(format_prompt(prompt_text, thinking=True)).content
+        # Strip /think tokens
+        if "</think>" in raw:
+            raw = raw.split("</think>")[-1].strip()
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        return json.loads(raw.strip())
+    except Exception as e:
+        print(f"[orientation] LLM question generation failed: {e}")
+        return _fallback_question(len(history))
+
+
+def _fallback_question(step: int) -> dict:
+    """Static fallback questions if LLM call fails."""
+    fallbacks = [
+        {
+            "question": "Представьте свободный вечер. Что вы предпочтёте делать?",
+            "options": [
+                {"text": "Починить что-то или собрать своими руками", "riasec": "R"},
+                {"text": "Читать научную статью или смотреть документальный фильм", "riasec": "I"},
+                {"text": "Нарисовать, написать или сыграть музыку", "riasec": "A"},
+                {"text": "Встретиться с друзьями и помочь кому-то с проблемой", "riasec": "S"},
+            ],
+        },
+        {
+            "question": "Какая рабочая среда вас привлекает больше всего?",
+            "options": [
+                {"text": "Лаборатория или мастерская — работа руками", "riasec": "R"},
+                {"text": "Исследовательский центр или библиотека", "riasec": "I"},
+                {"text": "Творческая студия или медиаагентство", "riasec": "A"},
+                {"text": "Школа, больница или НКО", "riasec": "S"},
+            ],
+        },
+        {
+            "question": "Какое задание вас больше воодушевит на работе?",
+            "options": [
+                {"text": "Настроить и оптимизировать техническую систему", "riasec": "R"},
+                {"text": "Провести анализ данных и найти закономерности", "riasec": "I"},
+                {"text": "Создать дизайн или придумать концепцию кампании", "riasec": "A"},
+                {"text": "Провести мастер-класс или помочь группе людей", "riasec": "S"},
+            ],
+        },
+        {
+            "question": "Какой из этих предметов в школе нравился вам больше всего?",
+            "options": [
+                {"text": "Физика или технология", "riasec": "R"},
+                {"text": "Математика или биология", "riasec": "I"},
+                {"text": "Литература или искусство", "riasec": "A"},
+                {"text": "История или обществознание", "riasec": "S"},
+            ],
+        },
+        {
+            "question": "Какой тип проекта вы бы выбрали для дипломной работы?",
+            "options": [
+                {"text": "Спроектировать и построить устройство или систему", "riasec": "R"},
+                {"text": "Провести научное исследование с экспериментами", "riasec": "I"},
+                {"text": "Создать художественное произведение или медиапроект", "riasec": "A"},
+                {"text": "Изучить социальную проблему и предложить её решение", "riasec": "S"},
+            ],
+        },
+    ]
+    return fallbacks[step % len(fallbacks)]
+
+
+def _format_question(q_data: dict, step: int) -> str:
+    """Format a question dict into a readable string for the student."""
+    options_text = "\n".join(
+        f"  {chr(65+i)}. {opt['text']}"
+        for i, opt in enumerate(q_data["options"])
+    )
+    return (
+        f"Вопрос ({step}/{MAX_QUESTIONS}):\n\n"
+        f"{q_data['question']}\n\n"
+        f"{options_text}\n\n"
+        "Ответьте буквой (А/Б/В/Г) или напишите своими словами."
+    )
+
+
+def _resolve_option_answer(text: str, options: list[dict]) -> str | None:
+    """Resolve A/B/C/D or А/Б/В/Г letter to RIASEC type from option list."""
+    upper = text.strip().upper()
+    cyrillic_map = {"А": 0, "Б": 1, "В": 2, "Г": 3}
+    latin_map = {"A": 0, "B": 1, "C": 2, "D": 3}
+
+    idx = cyrillic_map.get(upper[0]) if upper else None
+    if idx is None:
+        idx = latin_map.get(upper[0]) if upper else None
+    if idx is not None and idx < len(options):
+        return options[idx]["riasec"]
+    # Try numeric
+    try:
+        idx = int(upper[0]) - 1
+        if 0 <= idx < len(options):
+            return options[idx]["riasec"]
+    except (ValueError, IndexError):
+        pass
+    return None
 
 
 def orientation_engine(input_text: str) -> str:
     """
-    Run or advance the RIASEC survey for the active session.
+    Adaptive RIASEC survey with LLM-generated questions.
 
-    The tool is called by the agent whenever the student expresses uncertainty
-    about their major, OR when the agent is advancing an in-progress survey.
+    Use when student is undecided about major/career, or survey is already in progress.
+    Do NOT use for ORT score checks or direct program comparisons.
+    Input: student's latest message (may contain their survey answer).
     """
-    # Import here to avoid circular import at module load time
     from agent.core import get_active_session
 
     session = get_active_session()
     if session is None:
         return "Ошибка: сессия не найдена. Пожалуйста, начните разговор заново."
 
-    mapping = _load_mapping()
-    questions = mapping["survey_questions"]
+    # Ensure survey state exists on session
+    if not hasattr(session, "riasec_history"):
+        session.riasec_history = []
+    if not hasattr(session, "riasec_current_question"):
+        session.riasec_current_question = None
 
     # ── Survey already complete ────────────────────────────────────────────────
     if session.riasec_complete() and session.riasec_result:
@@ -75,52 +228,69 @@ def orientation_engine(input_text: str) -> str:
         faculty_list = "\n".join(f"  • {f}" for f in faculties)
         return (
             f"Ваш профиль RIASEC: **{riasec_type}**.\n\n"
-            f"Рекомендуемые специальности Ала-Тоо Университета:\n{faculty_list}\n\n"
-            "Хотите узнать подробнее об одной из этих программ? "
-            "Я могу сравнить их или проверить ваш балл ОРТ для поступления."
+            f"Рекомендуемые факультеты Ала-Тоо Университета:\n{faculty_list}\n\n"
+            "Хотите узнать подробнее об одной из программ? "
+            "Я могу сравнить их или проверить ваш балл ОРТ."
         )
 
     # ── Process answer if survey is in progress ────────────────────────────────
     if session.riasec_in_progress():
-        answer = _extract_answer(input_text)
-        if answer is None:
-            # Re-ask the current question
-            q = questions[session.riasec_step - 1]
-            return (
-                "Пожалуйста, ответьте одной буквой: R, I, A, S, E или C.\n\n"
-                + q["question_ru"]
-            )
-        session.riasec_answers.append(answer)
+        current_q = session.riasec_current_question
+        riasec_answer = None
 
-        # Check if all questions answered
-        if len(session.riasec_answers) >= RIASEC_MAX_QUESTIONS:
+        if current_q:
+            riasec_answer = _resolve_option_answer(input_text, current_q["options"])
+
+        if riasec_answer is None:
+            riasec_answer = _extract_answer(input_text)
+
+        if riasec_answer is None:
+            q_text = _format_question(current_q, session.riasec_step) if current_q else ""
+            return (
+                "Пожалуйста, ответьте буквой варианта (А, Б, В или Г).\n\n"
+                + q_text
+            )
+
+        # Record answer with question context
+        if current_q:
+            session.riasec_history.append({
+                "question": current_q["question"],
+                "answer": input_text[:100],
+                "riasec": riasec_answer,
+            })
+        session.riasec_answers.append(riasec_answer)
+
+        # Survey complete?
+        if len(session.riasec_answers) >= MAX_QUESTIONS:
             riasec_type, faculties = _compute_result(session.riasec_answers)
             session.riasec_result = riasec_type
-            session.riasec_step = RIASEC_MAX_QUESTIONS
+            session.riasec_step = MAX_QUESTIONS
             faculty_list = "\n".join(f"  • {f}" for f in faculties)
             return (
-                f"Спасибо! Вы ответили на все {RIASEC_MAX_QUESTIONS} вопроса.\n\n"
-                f"Ваш профиль RIASEC: **{riasec_type}**.\n\n"
-                f"Рекомендуемые специальности Ала-Тоо Университета:\n{faculty_list}\n\n"
+                f"Спасибо! Вы ответили на все {MAX_QUESTIONS} вопроса.\n\n"
+                f"🧠 Ваш профиль RIASEC: **{riasec_type}**.\n\n"
+                f"🎓 Рекомендуемые факультеты МУА:\n{faculty_list}\n\n"
                 "Хотите узнать подробнее о любой из этих программ?"
             )
 
-        # Ask next question
+        # Generate next question
         session.riasec_step += 1
-        next_q = questions[session.riasec_step - 1]
-        progress = f"({session.riasec_step}/{RIASEC_MAX_QUESTIONS})"
-        return f"Вопрос {progress}:\n\n{next_q['question_ru']}"
+        next_q = _generate_next_question(session.riasec_history)
+        session.riasec_current_question = next_q
+        return _format_question(next_q, session.riasec_step)
 
     # ── Start the survey ───────────────────────────────────────────────────────
     session.riasec_step = 1
     session.riasec_answers = []
-    first_q = questions[0]
+    session.riasec_history = []
+
+    first_q = _generate_next_question([])
+    session.riasec_current_question = first_q
+
     return (
-        "Отлично! Давайте определим, какая специальность вам подходит, "
-        f"с помощью короткого опроса из {RIASEC_MAX_QUESTIONS} вопросов "
-        "(метод Голланда — RIASEC).\n\n"
-        f"Вопрос (1/{RIASEC_MAX_QUESTIONS}):\n\n"
-        + first_q["question_ru"]
+        "Отлично! Давайте определим, какая специальность вам подходит.\n"
+        f"Я задам {MAX_QUESTIONS} ситуационных вопроса (метод Голланда — RIASEC).\n\n"
+        + _format_question(first_q, 1)
     )
 
 
@@ -129,10 +299,11 @@ orientation_engine_tool = Tool(
     func=orientation_engine,
     description=(
         "Use this tool when a student is undecided about their major or career path, "
-        "or when a RIASEC survey is already in progress and the student has provided "
-        "an answer (R/I/A/S/E/C) to the current question. "
-        "This tool administers a 5-question Holland RIASEC survey and maps the result "
-        "to Ala-Too University faculties. "
-        "Input: the student's latest message (may contain their survey answer)."
+        "wants help choosing a faculty, or when a RIASEC survey is already in progress "
+        "and the student has answered a question. "
+        "This tool runs an adaptive 5-question Holland RIASEC survey with LLM-generated "
+        "situational questions and maps the result to real Ala-Too University faculties. "
+        "Input: the student's latest message (question or survey answer). "
+        "Do NOT use for ORT score checks or direct program comparisons."
     ),
 )

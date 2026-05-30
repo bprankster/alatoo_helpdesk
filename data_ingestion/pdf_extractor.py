@@ -5,30 +5,44 @@ Each PDF is returned as a list of page dicts compatible with the chunker.
 """
 
 import os
+import sys
 from datetime import date
 from pathlib import Path
 from typing import Optional
 
+import yaml
 from langchain_community.document_loaders import PyPDFLoader
 
-import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from config import DATA_DIR
 
-PDF_DIR = os.path.join(DATA_DIR, "pdfs")
+_cfg_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
+with open(_cfg_path) as _f:
+    _cfg = yaml.safe_load(_f)
+
+PDF_DIR = _cfg["data"]["raw_pdfs"]
 
 
 def _infer_faculty_from_filename(filename: str) -> str:
-    """Best-effort faculty label from the PDF filename."""
     name = filename.lower()
     mapping = {
-        "cs": "CS", "computer": "CS", "software": "CS", "it": "CS",
-        "econ": "Economics", "finance": "Economics",
-        "law": "Law", "legal": "Law",
-        "business": "Business", "management": "Business",
-        "edu": "Education", "pedagog": "Education",
-        "design": "Design", "media": "Design",
-        "eng": "Engineering",
+        "engineering": "Факультет инженерии и информатики",
+        "informatics": "Факультет инженерии и информатики",
+        "инженер": "Факультет инженерии и информатики",
+        "cs": "Факультет инженерии и информатики",
+        "computer": "Факультет инженерии и информатики",
+        "econ": "Факультет экономики и управления",
+        "economics": "Факультет экономики и управления",
+        "экономик": "Факультет экономики и управления",
+        "law": "Факультет экономики и управления",
+        "медицин": "Медицинский факультет",
+        "medicine": "Медицинский факультет",
+        "medical": "Медицинский факультет",
+        "social": "Факультет социальных наук",
+        "социал": "Факультет социальных наук",
+        "human": "Факультет гуманитарных наук",
+        "гуманит": "Факультет гуманитарных наук",
+        "lingv": "Факультет гуманитарных наук",
+        "педагог": "Факультет гуманитарных наук",
     }
     for keyword, faculty in mapping.items():
         if keyword in name:
@@ -37,12 +51,7 @@ def _infer_faculty_from_filename(filename: str) -> str:
 
 
 def extract_pdf(pdf_path: str, faculty: Optional[str] = None) -> list[dict]:
-    """
-    Load a single PDF and return one dict per page with metadata.
-
-    Each dict:
-        text, faculty, doc_type, source_file, page, last_updated
-    """
+    """Load a single PDF and return one dict per page with metadata."""
     path = Path(pdf_path)
     if not path.exists():
         print(f"[pdf] File not found: {pdf_path}")
@@ -61,7 +70,7 @@ def extract_pdf(pdf_path: str, faculty: Optional[str] = None) -> list[dict]:
     pages = []
     for doc in docs:
         text = doc.page_content.strip()
-        if len(text) < 50:          # skip near-empty pages
+        if len(text) < 50:
             continue
         pages.append({
             "text": text,

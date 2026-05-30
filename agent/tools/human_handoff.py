@@ -10,22 +10,41 @@ import os
 import sys
 from datetime import datetime
 
-from langchain.tools import Tool
+import yaml
+from langchain_core.tools import Tool
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-from config import TELEGRAM_BOT_TOKEN, OFFICER_CHAT_ID
+
+_cfg_path = os.path.join(os.path.dirname(__file__), "..", "..", "config.yaml")
+with open(_cfg_path) as _f:
+    _cfg = yaml.safe_load(_f)
+
+# Telegram credentials: prefer env vars (secrets), fall back to config.yaml
+_TELEGRAM_BOT_TOKEN: str = (
+    os.getenv("TELEGRAM_BOT_TOKEN") or _cfg["telegram"].get("bot_token", "")
+)
+_OFFICER_CHAT_ID: str = (
+    os.getenv("OFFICER_CHAT_ID") or _cfg["telegram"].get("officer_chat_id", "")
+)
+
+# Real MUA admissions contact info
+CONTACT_INFO = (
+    "📞 +996 555 820 000 (WhatsApp)\n"
+    "📧 admission@alatoo.edu.kg\n"
+    "🏢 ул. Анкара (Горький) 1/10, мкр. «Тунгуч», г. Бишкек (D-блок, 1 этаж)\n"
+    "🌐 https://2020.edu.gov.kg/vuz"
+)
 
 
 def _send_telegram_message(text: str) -> bool:
-    """Send a message to the officer's Telegram chat. Returns True on success."""
-    if not TELEGRAM_BOT_TOKEN or not OFFICER_CHAT_ID:
+    if not _TELEGRAM_BOT_TOKEN or not _OFFICER_CHAT_ID:
         print("[handoff] Telegram credentials not configured — skipping send.")
         return False
     try:
         import httpx
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        url = f"https://api.telegram.org/bot{_TELEGRAM_BOT_TOKEN}/sendMessage"
         payload = {
-            "chat_id": OFFICER_CHAT_ID,
+            "chat_id": _OFFICER_CHAT_ID,
             "text": text,
             "parse_mode": "Markdown",
         }
@@ -41,8 +60,9 @@ def human_handoff(input_text: str) -> str:
     """
     Notify the admissions officer with a structured session summary.
 
-    The summary is built from session state variables only.
-    Input: reason the student needs a human (used as context note only).
+    Use when: student asks for a human, question is unanswerable, or special circumstances.
+    Do NOT use for standard ORT/program queries that tools can handle.
+    Input: brief description of why student needs human assistance.
     """
     from agent.core import get_active_session
 
@@ -50,14 +70,13 @@ def human_handoff(input_text: str) -> str:
     if session is None:
         return (
             "Не удалось передать данные: сессия не найдена. "
-            "Пожалуйста, свяжитесь с приёмной комиссией напрямую: "
-            "+996 (312) 123-456 или admissions@alatoo.edu.kg"
+            "Пожалуйста, свяжитесь с приёмной комиссией напрямую:\n"
+            + CONTACT_INFO
         )
 
     summary = session.to_summary_dict()
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # Build the officer notification (structured, no LLM summary)
     officer_msg = (
         f"🔔 *Запрос на помощь сотрудника*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -79,20 +98,16 @@ def human_handoff(input_text: str) -> str:
 
     if sent:
         return (
-            "✅ Ваш запрос передан сотруднику приёмной комиссии. "
+            "✅ Ваш запрос передан сотруднику приёмной комиссии МУА. "
             "Они свяжутся с вами в ближайшее время.\n\n"
             "Если вопрос срочный, вы также можете обратиться напрямую:\n"
-            "📞 +996 (312) 123-456\n"
-            "📧 admissions@alatoo.edu.kg\n"
-            "🏢 Корпус A, каб. 101, пн–пт 9:00–17:00"
+            + CONTACT_INFO
         )
     else:
         return (
             "⚠️ Не удалось автоматически уведомить сотрудника. "
             "Пожалуйста, обратитесь в приёмную комиссию напрямую:\n"
-            "📞 +996 (312) 123-456\n"
-            "📧 admissions@alatoo.edu.kg\n"
-            "🏢 Корпус A, каб. 101, пн–пт 9:00–17:00"
+            + CONTACT_INFO
         )
 
 
@@ -102,7 +117,8 @@ human_handoff_tool = Tool(
     description=(
         "Use this tool when: the student explicitly asks to speak to a human officer, "
         "the student's question cannot be answered from the database, "
-        "or the situation requires human judgement (e.g. special circumstances, complaints). "
+        "or the situation requires human judgement (e.g. special circumstances, complaints, "
+        "questions about enrollment status). "
         "Input: a brief description of why the student needs human assistance."
     ),
 )

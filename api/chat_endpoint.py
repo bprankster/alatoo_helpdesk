@@ -1,5 +1,8 @@
 """
-chat_endpoint.py — POST /chat and POST /voice routes for the Gradio kiosk.
+chat_endpoint.py — POST /chat and POST /voice routes.
+
+Web platform gets TTS audio in response when tts.enabled_platforms includes 'web'.
+Telegram gets text only (no TTS).
 """
 
 import os
@@ -20,16 +23,18 @@ router = APIRouter()
 class ChatRequest(BaseModel):
     message: str
     user_id: str = "web_anonymous"
+    platform: str = "web"
 
 
 class ChatResponse(BaseModel):
     reply: str
+    audio_path: str | None = None
     session_cleared: bool = False
 
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest) -> ChatResponse:
-    """Handle a plain-text message from the Gradio kiosk."""
+    """Handle a plain-text message. Returns TTS audio path for web platform."""
     guard = guardrails.check(req.message)
     if guard.blocked:
         return ChatResponse(reply=guard.reply)
@@ -39,13 +44,26 @@ async def chat(req: ChatRequest) -> ChatResponse:
         return ChatResponse(reply=guard.reply)
 
     reply = run_agent(req.message, session)
-    return ChatResponse(reply=reply)
+
+    audio_path: str | None = None
+    if req.platform == "web":
+        try:
+            import tts.kani_tts as tts_mod
+            if tts_mod.is_enabled("web"):
+                import hashlib
+                fname = hashlib.md5(reply.encode()).hexdigest()[:12] + ".wav"
+                audio_path = tts_mod.speak(reply, filename=fname)
+        except Exception as e:
+            print(f"[chat] TTS failed (non-fatal): {e}")
+
+    return ChatResponse(reply=reply, audio_path=audio_path)
 
 
 @router.post("/voice", response_model=ChatResponse)
 async def voice(
     audio: UploadFile = File(...),
     user_id: str = Form(default="web_anonymous"),
+    platform: str = Form(default="web"),
 ) -> ChatResponse:
     """Handle a voice file upload — transcribe then route to agent."""
     from voice.stt import transcribe
@@ -76,7 +94,22 @@ async def voice(
         return ChatResponse(reply=guard.reply)
 
     reply = run_agent(text, session)
-    return ChatResponse(reply=f"🎙️ _Распознано:_ «{text}»\n\n{reply}")
+
+    audio_path: str | None = None
+    if platform == "web":
+        try:
+            import tts.kani_tts as tts_mod
+            if tts_mod.is_enabled("web"):
+                import hashlib
+                fname = hashlib.md5(reply.encode()).hexdigest()[:12] + ".wav"
+                audio_path = tts_mod.speak(reply, filename=fname)
+        except Exception as e:
+            print(f"[voice] TTS failed (non-fatal): {e}")
+
+    return ChatResponse(
+        reply=f"🎙️ _Распознано:_ «{text}»\n\n{reply}",
+        audio_path=audio_path,
+    )
 
 
 @router.post("/clear_session")

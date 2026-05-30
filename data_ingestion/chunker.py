@@ -6,41 +6,46 @@ Output chunk dict keys:
 """
 
 import hashlib
-import sys
 import os
+import sys
 
+import yaml
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from config import CHUNK_SIZE, CHUNK_OVERLAP
+
+_cfg_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
+with open(_cfg_path) as _f:
+    _cfg = yaml.safe_load(_f)
 
 
 def _make_chunk_id(text: str, source: str, idx: int) -> str:
-    """Deterministic ID so re-ingestion overwrites the same chunk."""
     raw = f"{source}::{idx}::{text[:64]}"
     return hashlib.md5(raw.encode()).hexdigest()
 
 
 def chunk_pages(
     pages: list[dict],
-    chunk_size: int = CHUNK_SIZE,
-    chunk_overlap: int = CHUNK_OVERLAP,
+    chunk_size: int | None = None,
+    chunk_overlap: int | None = None,
 ) -> list[dict]:
     """
     Split each page dict into overlapping text chunks.
 
     Args:
-        pages: list of page dicts (from scraper or pdf_extractor)
-        chunk_size: max tokens per chunk (treated as characters here;
-                    true token count varies by model)
-        chunk_overlap: overlap between consecutive chunks
+        pages: list of page dicts (from scraper, pdf_extractor, or manual loader)
+        chunk_size: override config value if provided
+        chunk_overlap: override config value if provided
 
     Returns:
         list of chunk dicts ready for embedding
     """
+    size = chunk_size or _cfg["chunking"]["chunk_size"]
+    overlap = chunk_overlap or _cfg["chunking"]["chunk_overlap"]
+
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
+        chunk_size=size,
+        chunk_overlap=overlap,
         separators=["\n\n", "\n", ". ", " ", ""],
         length_function=len,
     )
@@ -52,7 +57,6 @@ def chunk_pages(
         if not raw_text:
             continue
 
-        # Determine a stable source key for chunk_id generation
         source = page.get("url") or page.get("source_file") or "unknown"
 
         splits = splitter.split_text(raw_text)
@@ -66,7 +70,6 @@ def chunk_pages(
                 "last_updated": page.get("last_updated", ""),
                 "chunk_id": _make_chunk_id(split_text, source, idx),
             }
-            # Preserve the correct source key
             if "url" in page:
                 chunk["source_url"] = page["url"]
             if "source_file" in page:
@@ -75,15 +78,14 @@ def chunk_pages(
             chunks.append(chunk)
 
     print(f"[chunker] {len(pages)} pages → {len(chunks)} chunks "
-          f"(size={chunk_size}, overlap={chunk_overlap})")
+          f"(size={size}, overlap={overlap})")
     return chunks
 
 
 if __name__ == "__main__":
-    # Quick smoke test with dummy data
     dummy = [{"text": "Lorem ipsum dolor sit amet. " * 100,
               "url": "http://example.com", "faculty": "CS",
-              "doc_type": "program", "last_updated": "2026-04-13"}]
+              "doc_type": "program", "last_updated": "2026-05-30"}]
     result = chunk_pages(dummy)
     print(f"Chunks produced: {len(result)}")
     print("First chunk preview:", result[0]["text"][:80])
