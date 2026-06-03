@@ -37,6 +37,10 @@ def _generate_user_id() -> str:
     return f"web_{uuid.uuid4().hex[:12]}"
 
 
+def _msg(role: str, content: str) -> dict:
+    return {"role": role, "content": content}
+
+
 def respond(message: str, history: list, user_id: str) -> tuple[str, list, str]:
     """
     Called by Gradio on each user message submission.
@@ -48,12 +52,12 @@ def respond(message: str, history: list, user_id: str) -> tuple[str, list, str]:
 
     guard = guardrails.check(message)
     if guard.blocked or guard.off_topic:
-        history = history + [(message, guard.reply)]
+        history = history + [_msg("user", message), _msg("assistant", guard.reply)]
         return "", history, user_id
 
     session = get_session(user_id)
     reply = run_agent(message, session)
-    history = history + [(message, reply)]
+    history = history + [_msg("user", message), _msg("assistant", reply)]
     return "", history, user_id
 
 
@@ -67,15 +71,15 @@ def respond_voice(audio_path: str | None, history: list, user_id: str) -> tuple[
 
     if not text:
         err = "Не удалось распознать речь. Попробуйте ещё раз или напишите текстом."
-        return history + [(None, err)], user_id
+        return history + [_msg("assistant", err)], user_id
 
     guard = guardrails.check(text)
     if guard.blocked or guard.off_topic:
-        return history + [(f"🎙 {text}", guard.reply)], user_id
+        return history + [_msg("user", f"🎙 {text}"), _msg("assistant", guard.reply)], user_id
 
     session = get_session(user_id)
     reply = run_agent(text, session)
-    return history + [(f"🎙 {text}", reply)], user_id
+    return history + [_msg("user", f"🎙 {text}"), _msg("assistant", reply)], user_id
 
 
 def reset_session(user_id: str) -> tuple[list, str]:
@@ -100,6 +104,7 @@ def build_demo() -> gr.Blocks:
         with gr.Row():
             with gr.Column(scale=4):
                 chatbot = gr.Chatbot(
+                    type='messages',
                     label="Чат / Chat",
                     height=480,
                     show_label=False,

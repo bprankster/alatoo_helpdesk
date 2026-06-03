@@ -1,14 +1,16 @@
 """
 tts/kani_tts.py — Kyrgyz TTS wrapper for nineninesix/kani-tts-400m-ky.
 
-Only loads if the platform is in config.yaml tts.enabled_platforms.
+Only called when the platform is in config.yaml tts.enabled_platforms.
 Telegram is excluded (text-only). Web kiosk gets audio responses.
+Loads on demand per request; unloads after each call to free VRAM for Qwen3/BGE-m3.
 """
 
 import os
 import sys
 from pathlib import Path
 
+import torch
 import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -26,8 +28,10 @@ def is_enabled(platform: str) -> bool:
 
 
 def load() -> None:
-    """Load the TTS model into memory. Call once at startup."""
+    """Load the TTS model into memory."""
     global _model
+    if _model is not None:
+        return
     model_name = _cfg["tts"]["model"]
     print(f"[tts] Loading {model_name}…")
     from kani_tts import KaniTTS
@@ -38,9 +42,9 @@ def load() -> None:
 def speak(text: str, filename: str = "response.wav") -> str:
     """
     Convert text to Kyrgyz speech. Returns path to the generated wav file.
+    Loads model on demand, unloads after each call to free VRAM.
 
     Only call after checking is_enabled(platform).
-    Raises RuntimeError if model not loaded.
 
     Args:
         text: text to speak (Kyrgyz or Russian)
@@ -49,13 +53,22 @@ def speak(text: str, filename: str = "response.wav") -> str:
     Returns:
         Absolute path to the generated wav file.
     """
-    if _model is None:
-        raise RuntimeError("[tts] Model not loaded — call tts.load() at startup")
+    global _model
+    try:
+        if _model is None:
+            load()
 
-    output_dir = Path(_cfg["tts"]["output_dir"])
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = str(output_dir / filename)
+        output_dir = Path(_cfg["tts"]["output_dir"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = str(output_dir / filename)
 
-    audio, _ = _model(text)
-    _model.save_audio(audio, output_path)
-    return output_path
+        audio, _ = _model(text)
+        _model.save_audio(audio, output_path)
+        return output_path
+    finally:
+        if _model is not None:
+            del _model
+            _model = None
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            print("[tts] Model unloaded.")

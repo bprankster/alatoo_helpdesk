@@ -1,17 +1,17 @@
 """
-voice/stt.py — Speech-to-text using kyrgyz-whisper-medium.
+voice/stt.py — Speech-to-text using kyrgyz-whisper-medium via transformers pipeline.
 
 Single model handles Kyrgyz + Russian + English natively.
-No language routing needed — auto-detection via Whisper.
+No language routing needed — Whisper auto-detects language.
+Loads on demand per request; unloads after each call to keep VRAM free for Qwen3/BGE-m3.
 """
 
 import os
 import sys
 import tempfile
-from pathlib import Path
 
+import torch
 import yaml
-from faster_whisper import WhisperModel
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -19,38 +19,69 @@ _cfg_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
 with open(_cfg_path) as _f:
     cfg = yaml.safe_load(_f)
 
-# Hardcoded path to the downloaded model — bypasses HF cache lookup
-MODEL_PATH = "/home/cs/.cache/huggingface/kyrgyz-whisper-ct2"
+MODEL_PATH = (
+    "/home/cs/.cache/huggingface/hub/"
+    "models--nineninesix--kyrgyz-whisper-medium/snapshots/"
+    "bb00894d615500bc76aeb6b042d135555dfec125"
+)
 
-_model = None
+_pipeline = None
 
 
-def load():
-    """Load the model at startup. Called from api/main.py lifespan."""
-    global _model
-    if _model is not None:
-        return
-    device = cfg["stt"]["device"]
-    compute_type = cfg["stt"]["compute_type"]
-    print(f"[stt] Loading nineninesix/kyrgyz-whisper-medium on {device}…")
-    _model = WhisperModel(
-        MODEL_PATH,
+def _load_pipeline(device: int = 0):
+    """Load transformers ASR pipeline. device=0 for GPU, device=-1 for CPU."""
+    from transformers import pipeline
+    return pipeline(
+        "automatic-speech-recognition",
+        model=MODEL_PATH,
         device=device,
-        compute_type=compute_type,
+        torch_dtype=torch.float16 if device == 0 else torch.float32,
     )
-    print("[stt] Model loaded.")
 
 
-def _get_model() -> WhisperModel:
-    global _model
-    if _model is None:
-        load()
-    return _model
+def load() -> None:
+    """Load STT pipeline on GPU. Falls back to CPU on CUDA OOM."""
+    global _pipeline
+    if _pipeline is not None:
+        return
+    print("[stt] Loading kyrgyz-whisper-medium…")
+    try:
+        _pipeline = _load_pipeline(device=0)
+        print("[stt] Loaded on GPU.")
+    except RuntimeError as e:
+        if "out of memory" in str(e).lower():
+            print(f"[stt] CUDA OOM at load — using CPU: {e}")
+            _pipeline = _load_pipeline(device=-1)
+            print("[stt] Loaded on CPU.")
+        else:
+            raise
+
+
+def _unload() -> None:
+    global _pipeline
+    if _pipeline is not None:
+        del _pipeline
+        _pipeline = None
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        print("[stt] Unloaded.")
+
+
+def _run_inference(pipe, audio_path: str) -> str:
+    result = pipe(
+        str(audio_path),
+        generate_kwargs={"task": "transcribe"},
+        return_timestamps=False,
+    )
+    text = result.get("text", "").strip()
+    print(f"[stt] Transcribed: {text[:80]}")
+    return text
 
 
 def transcribe(audio_path: str) -> str:
     """
     Transcribe audio file. Auto-detects Kyrgyz, Russian, or English.
+    Loads model on demand, unloads after each call to free VRAM.
 
     Args:
         audio_path: path to audio file (wav, ogg, mp3, m4a, etc.)
@@ -58,25 +89,27 @@ def transcribe(audio_path: str) -> str:
     Returns:
         Transcribed text, or empty string on failure.
     """
-    model = _get_model()
     try:
-        segments, info = model.transcribe(
-            str(audio_path),
-            initial_prompt=cfg["stt"]["contextual_bias"],
-            language=None,
-            beam_size=5,
-            vad_filter=True,
-            vad_parameters={"min_silence_duration_ms": 500},
-        )
-        text = " ".join(s.text.strip() for s in segments).strip()
-        print(
-            f"[stt] Detected: {info.language} "
-            f"(prob={info.language_probability:.2f}) | {text[:80]}"
-        )
-        return text
+        load()
+        try:
+            return _run_inference(_pipeline, audio_path)
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                print("[stt] CUDA OOM during inference — retrying on CPU")
+                _unload()
+                cpu_pipe = _load_pipeline(device=-1)
+                try:
+                    return _run_inference(cpu_pipe, audio_path)
+                finally:
+                    del cpu_pipe
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+            raise
     except Exception as e:
         print(f"[stt] Transcription error: {e}")
         return ""
+    finally:
+        _unload()
 
 
 def transcribe_bytes(audio_bytes: bytes, suffix: str = ".ogg") -> str:
