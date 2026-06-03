@@ -17,8 +17,13 @@ _cfg_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
 with open(_cfg_path) as _f:
     _cfg = yaml.safe_load(_f)
 
-_model = None
+MODEL_PATH = "/home/cs/.cache/huggingface/hub/models--nineninesix--kyrgyz-whisper-medium/snapshots/bb00894d615500bc76aeb6b042d135555dfec125"
 
+_model = WhisperModel(
+    MODEL_PATH,
+    device=cfg["stt"]["device"],
+    compute_type=cfg["stt"]["compute_type"],
+)
 
 def _get_model():
     global _model
