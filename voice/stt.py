@@ -1,119 +1,99 @@
 """
-voice/stt.py — Speech-to-text using kyrgyz-whisper-medium via transformers pipeline.
-
-Single model handles Kyrgyz + Russian + English natively.
-No language routing needed — Whisper auto-detects language.
-Loads on demand per request; unloads after each call to keep VRAM free for Qwen3/BGE-m3.
+voice/stt.py — kyrgyz-whisper-medium with official custom tokenizer.
 """
 
-import os
-import sys
-import tempfile
-
-import torch
-import yaml
+import os, sys, tempfile, yaml, torch
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
 _cfg_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
-with open(_cfg_path) as _f:
-    cfg = yaml.safe_load(_f)
+with open(_cfg_path) as f:
+    cfg = yaml.safe_load(f)
 
-MODEL_PATH = (
-    "/home/cs/.cache/huggingface/hub/"
-    "models--nineninesix--kyrgyz-whisper-medium/snapshots/"
-    "bb00894d615500bc76aeb6b042d135555dfec125"
-)
+MODEL_PATH = "/home/cs/.cache/huggingface/hub/models--nineninesix--kyrgyz-whisper-medium/snapshots/bb00894d615500bc76aeb6b042d135555dfec125"
 
-_pipeline = None
+_pipe = None
 
+def load():
+    global _pipe
+    from transformers import (
+        AutoModelForSpeechSeq2Seq,
+        AutoProcessor,
+        pipeline,
+        WhisperFeatureExtractor,
+        AutoTokenizer,
+    )
 
-def _load_pipeline(device: int = 0):
-    """Load transformers ASR pipeline. device=0 for GPU, device=-1 for CPU."""
-    from transformers import pipeline
-    return pipeline(
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+
+    print(f"[stt] Loading kyrgyz-whisper-medium on {device}…")
+
+    model = AutoModelForSpeechSeq2Seq.from_pretrained(
+        MODEL_PATH,
+        torch_dtype=torch_dtype,
+        low_cpu_mem_usage=True,
+        use_safetensors=True,
+    )
+    model.to(device)
+
+    feature_extractor = WhisperFeatureExtractor.from_pretrained(MODEL_PATH)
+
+    # Critical: trust_remote_code=True loads the custom <|ky|> Kyrgyz token
+    tokenizer = AutoTokenizer.from_pretrained(
+        MODEL_PATH,
+        trust_remote_code=True,
+        language="kyrgyz",
+        task="transcribe",
+    )
+
+    _pipe = pipeline(
         "automatic-speech-recognition",
-        model=MODEL_PATH,
+        model=model,
+        tokenizer=tokenizer,
+        feature_extractor=feature_extractor,
+        torch_dtype=torch_dtype,
         device=device,
-        torch_dtype=torch.float16 if device == 0 else torch.float32,
     )
+    print("[stt] kyrgyz-whisper-medium loaded with Kyrgyz tokenizer.")
 
 
-def load() -> None:
-    """Load STT pipeline on GPU. Falls back to CPU on CUDA OOM."""
-    global _pipeline
-    if _pipeline is not None:
-        return
-    print("[stt] Loading kyrgyz-whisper-medium…")
-    try:
-        _pipeline = _load_pipeline(device=0)
-        print("[stt] Loaded on GPU.")
-    except RuntimeError as e:
-        if "out of memory" in str(e).lower():
-            print(f"[stt] CUDA OOM at load — using CPU: {e}")
-            _pipeline = _load_pipeline(device=-1)
-            print("[stt] Loaded on CPU.")
-        else:
-            raise
-
-
-def _unload() -> None:
-    global _pipeline
-    if _pipeline is not None:
-        del _pipeline
-        _pipeline = None
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        print("[stt] Unloaded.")
-
-
-def _run_inference(pipe, audio_path: str) -> str:
-    result = pipe(
-        str(audio_path),
-        generate_kwargs={"task": "transcribe"},
-        return_timestamps=False,
-    )
-    text = result.get("text", "").strip()
-    print(f"[stt] Transcribed: {text[:80]}")
-    return text
+def _get_pipe():
+    global _pipe
+    if _pipe is None:
+        load()
+    return _pipe
 
 
 def transcribe(audio_path: str) -> str:
-    """
-    Transcribe audio file. Auto-detects Kyrgyz, Russian, or English.
-    Loads model on demand, unloads after each call to free VRAM.
-
-    Args:
-        audio_path: path to audio file (wav, ogg, mp3, m4a, etc.)
-
-    Returns:
-        Transcribed text, or empty string on failure.
-    """
+    pipe = _get_pipe()
     try:
+        result = pipe(
+            str(audio_path),
+            generate_kwargs={
+                "task": "transcribe",
+                "language": None,  # auto-detect
+            },
+        )
+        text = result["text"].strip()
+        print(f"[stt] Transcribed: {text[:80]}")
+        return text
+    except torch.cuda.OutOfMemoryError:
+        print("[stt] CUDA OOM — clearing cache and retrying on CPU")
+        global _pipe
+        del _pipe
+        _pipe = None
+        torch.cuda.empty_cache()
+        # Reload on CPU
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
         load()
-        try:
-            return _run_inference(_pipeline, audio_path)
-        except RuntimeError as e:
-            if "out of memory" in str(e).lower():
-                print("[stt] CUDA OOM during inference — retrying on CPU")
-                _unload()
-                cpu_pipe = _load_pipeline(device=-1)
-                try:
-                    return _run_inference(cpu_pipe, audio_path)
-                finally:
-                    del cpu_pipe
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-            raise
+        return transcribe(audio_path)
     except Exception as e:
-        print(f"[stt] Transcription error: {e}")
+        print(f"[stt] Error: {e}")
         return ""
-    finally:
-        _unload()
 
 
 def transcribe_bytes(audio_bytes: bytes, suffix: str = ".ogg") -> str:
-    """Convenience wrapper: write bytes to temp file, transcribe, clean up."""
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(audio_bytes)
         tmp_path = tmp.name

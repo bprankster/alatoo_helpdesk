@@ -2,7 +2,7 @@ llm:
   model: "qwen3:14b"
   base_url: "http://localhost:11434"
   temperature: 0.1
-  num_predict: 512
+  num_predict: 1024
   num_ctx: 4096
 
 embeddings:
@@ -38,7 +38,7 @@ stt:
   model: "nineninesix/kyrgyz-whisper-medium"
   device: "cuda"
   compute_type: "float16"
-  contextual_bias: "Саламатсызбы, ОРТ, программист, факультет, экономика, медицина, юрист"
+  contextual_bias: "Саламатсызбы, ОРТ упайым, ОРТ балл, факультет, Ала-Тоо университети, МУА, инженерия, медицина, экономика, юриспруденция, кирүү, поступление, математика, физика, химия, биология, скидка, стипендия"
 
 tts:
   model: "nineninesix/kani-tts-400m-ky"
