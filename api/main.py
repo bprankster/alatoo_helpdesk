@@ -42,20 +42,19 @@ async def lifespan(app: FastAPI):
     from agent.core import get_llm
     get_llm()
 
-    print("[startup] Loading STT model…")
+    print("[startup] Checking STT availability…")
     try:
-        from voice.stt import _get_model
-        _get_model()
+        import voice.stt  # noqa: F401 — load-on-demand; just verify import
+        print("[startup] STT ready (loads per request).")
     except Exception as e:
-        print(f"[startup] STT model not available: {e}")
+        print(f"[startup] STT not available: {e}")
 
-    print("[startup] Loading TTS model…")
+    print("[startup] Checking TTS availability…")
     try:
-        import tts.kani_tts as tts_mod
-        if tts_mod.is_enabled("web"):
-            tts_mod.load()
+        import tts.kani_tts  # noqa: F401 — load-on-demand; just verify import
+        print("[startup] TTS ready (loads per request).")
     except Exception as e:
-        print(f"[startup] TTS model not available: {e}")
+        print(f"[startup] TTS not available: {e}")
 
     print("[startup] Registering Telegram webhook…")
     await set_webhook()
