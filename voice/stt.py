@@ -20,7 +20,7 @@ with open(_cfg_path) as _f:
     cfg = yaml.safe_load(_f)
 
 # Hardcoded path to the downloaded model — bypasses HF cache lookup
-MODEL_PATH = "/home/cs/.cache/huggingface/hub/models--nineninesix--kyrgyz-whisper-medium/snapshots/bb00894d615500bc76aeb6b042d135555dfec125"
+MODEL_PATH = "/home/cs/.cache/huggingface/kyrgyz-whisper-ct2"
 
 _model = None
 
