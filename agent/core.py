@@ -111,6 +111,21 @@ def get_agent_executor() -> AgentExecutor:
     return _agent_executor
 
 
+# ── Language detection ────────────────────────────────────────────────────────
+
+def detect_language(text: str) -> str:
+    """
+    Detect language using character sets. No external libraries needed.
+    Kyrgyz has unique characters not present in Russian: ң ү ө
+    """
+    kyrgyz_specific = {'ң', 'ү', 'ө', 'Ң', 'Ү', 'Ө'}
+    if any(c in kyrgyz_specific for c in text):
+        return 'ky'
+    if any('Ѐ' <= c <= 'ӿ' for c in text):
+        return 'ru'
+    return 'en'
+
+
 # ── Public entry point ─────────────────────────────────────────────────────────
 
 def run_agent(user_input: str, session: SessionState) -> str:
@@ -133,8 +148,12 @@ def run_agent(user_input: str, session: SessionState) -> str:
     session.add_message("user", user_input)
 
     # Try classifier fast path
-    from agent.router import route_query
-    route = route_query(user_input)
+    try:
+        from agent.router import route_query
+        route = route_query(user_input)
+    except Exception as e:
+        print(f"[router] Classifier unavailable ({e}), using ReAct")
+        route = "react_agent"
 
     if route != "react_agent":
         _tool_map = {
@@ -147,15 +166,40 @@ def run_agent(user_input: str, session: SessionState) -> str:
         if tool:
             try:
                 print(f"[router] Fast path → {route}")
-                answer = tool.func(user_input)
+                tool_result = tool.func(user_input)
+
+                # If Kyrgyz input, translate tool result to Kyrgyz via LLM
+                input_lang = detect_language(user_input)
+                if input_lang == 'ky':
+                    llm = get_llm(thinking=False)
+                    translate_prompt = (
+                        "/no_think Которул: төмөнкү текстти кыргыз тилине которуп бер. "
+                        "Бардык сандарды, эможилерди жана форматтоону сакта. "
+                        "КОТОРУЛГАН ТЕКСТТИ ГАНА КАЙТАРып бер:\n\n" + tool_result
+                    )
+                    answer = llm.invoke(translate_prompt).content.strip()
+                else:
+                    answer = tool_result
+
                 session.add_message("assistant", answer)
                 return answer
             except Exception as e:
                 print(f"[router] Fast path failed ({e}), falling back to ReAct")
 
-    # ReAct path (Qwen3)
+    # Detect language from input characters
+    input_lang = detect_language(user_input)
+
+    # Build language-prefixed input for ReAct
+    lang_prefix = {
+        'ky': 'МААНИЛҮҮ: Кыргыз тилинде гана жооп бер. ',
+        'en': 'IMPORTANT: Reply in English only. ',
+        'ru': '',
+    }.get(input_lang, '')
+
     try:
-        result = get_agent_executor().invoke({"input": user_input})
+        result = get_agent_executor().invoke({
+            "input": lang_prefix + user_input
+        })
         answer: str = result.get("output", "").strip()
     except Exception as e:
         print(f"[agent] Error: {e}")

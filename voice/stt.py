@@ -65,7 +65,29 @@ def _get_pipe():
     return _pipe
 
 
+def _is_valid_audio(audio_path: str) -> bool:
+    """Reject silent or too-short audio to prevent Whisper hallucination."""
+    try:
+        import wave, struct
+        with wave.open(str(audio_path), 'rb') as wf:
+            frames = wf.readframes(wf.getnframes())
+            if len(frames) < 8000:  # less than ~0.5s at 8kHz
+                print("[stt] Audio too short, skipping")
+                return False
+            # Check if audio is silence (all near-zero samples)
+            samples = struct.unpack(f'{len(frames)//2}h', frames)
+            avg_amplitude = sum(abs(s) for s in samples) / len(samples)
+            if avg_amplitude < 50:
+                print(f"[stt] Audio too quiet (amplitude={avg_amplitude:.1f}), skipping")
+                return False
+        return True
+    except Exception:
+        return True  # if we can't check, proceed anyway
+
+
 def transcribe(audio_path: str) -> str:
+    if not _is_valid_audio(audio_path):
+        return ""
     pipe = _get_pipe()
     try:
         result = pipe(
