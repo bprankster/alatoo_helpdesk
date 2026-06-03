@@ -8,33 +8,43 @@ No language routing needed — auto-detection via Whisper.
 import os
 import sys
 import tempfile
+from pathlib import Path
 
 import yaml
+from faster_whisper import WhisperModel
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 _cfg_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
 with open(_cfg_path) as _f:
-    _cfg = yaml.safe_load(_f)
+    cfg = yaml.safe_load(_f)
 
+# Hardcoded path to the downloaded model — bypasses HF cache lookup
 MODEL_PATH = "/home/cs/.cache/huggingface/hub/models--nineninesix--kyrgyz-whisper-medium/snapshots/bb00894d615500bc76aeb6b042d135555dfec125"
 
-_model = WhisperModel(
-    MODEL_PATH,
-    device=cfg["stt"]["device"],
-    compute_type=cfg["stt"]["compute_type"],
-)
+_model = None
 
-def _get_model():
+
+def load():
+    """Load the model at startup. Called from api/main.py lifespan."""
+    global _model
+    if _model is not None:
+        return
+    device = cfg["stt"]["device"]
+    compute_type = cfg["stt"]["compute_type"]
+    print(f"[stt] Loading nineninesix/kyrgyz-whisper-medium on {device}…")
+    _model = WhisperModel(
+        MODEL_PATH,
+        device=device,
+        compute_type=compute_type,
+    )
+    print("[stt] Model loaded.")
+
+
+def _get_model() -> WhisperModel:
     global _model
     if _model is None:
-        from faster_whisper import WhisperModel
-        model_id = _cfg["stt"]["model"]
-        device = _cfg["stt"]["device"]
-        compute_type = _cfg["stt"]["compute_type"]
-        print(f"[stt] Loading {model_id} on {device}…")
-        _model = WhisperModel(model_id, device=device, compute_type=compute_type)
-        print("[stt] Model loaded.")
+        load()
     return _model
 
 
@@ -52,14 +62,17 @@ def transcribe(audio_path: str) -> str:
     try:
         segments, info = model.transcribe(
             str(audio_path),
-            initial_prompt=_cfg["stt"]["contextual_bias"],
+            initial_prompt=cfg["stt"]["contextual_bias"],
             language=None,
             beam_size=5,
             vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 500},
         )
         text = " ".join(s.text.strip() for s in segments).strip()
-        print(f"[stt] Detected: {info.language} (prob={info.language_probability:.2f}) | {text[:80]}")
+        print(
+            f"[stt] Detected: {info.language} "
+            f"(prob={info.language_probability:.2f}) | {text[:80]}"
+        )
         return text
     except Exception as e:
         print(f"[stt] Transcription error: {e}")
