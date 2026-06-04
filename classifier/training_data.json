@@ -224,7 +224,6 @@
   {"text": "Международные финансы vs менеджмент — что выбрать?", "label": "program_comparator", "label_id": 2},
   {"text": "Гуманитарный факультет менен социалдык илимдер факультетин салыштыр", "label": "program_comparator", "label_id": 2},
   {"text": "Compare cybersecurity and computer engineering", "label": "program_comparator", "label_id": 2},
-
   {"text": "Можно ли мне прийти лично в приёмную комиссию?", "label": "human_handoff", "label_id": 3},
   {"text": "Кабылуу комиссиясына жеке барсам болобу?", "label": "human_handoff", "label_id": 3},
   {"text": "Хочу встретиться с консультантом лично", "label": "human_handoff", "label_id": 3},
@@ -244,5 +243,29 @@
   {"text": "Менин ата-энем сизди чакырмакчы, телефон номерди беришиңизди сурайбыз", "label": "human_handoff", "label_id": 3},
   {"text": "Поговорить с живым человеком пожалуйста, бот не помогает", "label": "human_handoff", "label_id": 3},
   {"text": "Мне нужно перевести документы, нужен специалист", "label": "human_handoff", "label_id": 3},
-  {"text": "Адамды чакыр, суроом татаал", "label": "human_handoff", "label_id": 3}
+  {"text": "Адамды чакыр, суроом татаал", "label": "human_handoff", "label_id": 3},
+  {"text": "У меня нестандартная ситуация, хочу поговорить с человеком", "label": "human_handoff", "label_id": 3},
+  {"text": "Мне нужно подать жалобу, соедините с человеком", "label": "human_handoff", "label_id": 3},
+  {"text": "Хочу поговорить о статусе моего заявления с живым сотрудником", "label": "human_handoff", "label_id": 3},
+  {"text": "В чём разница между IT и медициной?", "label": "program_comparator", "label_id": 2},
+  {"text": "IT менен медицинанын айырмасы эмне?", "label": "program_comparator", "label_id": 2},
+  {"text": "Какой факультет лучше — инженерия или экономика?", "label": "program_comparator", "label_id": 2},
+  {"text": "Инженерия жакшыбы, экономикабы?", "label": "program_comparator", "label_id": 2},
+  {"text": "Расскажи про оба факультета — право и менеджмент.", "label": "program_comparator", "label_id": 2},
+  {"text": "Укук жана менеджмент факультеттери жөнүндө айт.", "label": "program_comparator", "label_id": 2},
+  {"text": "Мне интересны два направления: робототехника и анализ данных.", "label": "program_comparator", "label_id": 2},
+  {"text": "Эки багыт кызыктырат: робототехника жана маалымат анализи.", "label": "program_comparator", "label_id": 2},
+  {"text": "Покажи отличия психологии от социальной работы.", "label": "program_comparator", "label_id": 2},
+  {"text": "Психология менен социалдык иштин айырмасын көрсөт.", "label": "program_comparator", "label_id": 2},
+  {"text": "Какие перспективы у кибербезопасности vs программирование?", "label": "program_comparator", "label_id": 2},
+  {"text": "Киберкоопсуздук менен программалоонун келечеги кандай?", "label": "program_comparator", "label_id": 2},
+  {"text": "Помоги выбрать между двумя факультетами — туризм и экономика.", "label": "program_comparator", "label_id": 2},
+  {"text": "Туризм жана экономика факультеттеринин бирин тандоого жардам бер.", "label": "program_comparator", "label_id": 2},
+  {"text": "Что общего и различного между лингвистикой и журналистикой?", "label": "program_comparator", "label_id": 2},
+  {"text": "Лингвистика менен журналистиканын окшоштугу жана айырмасы эмне?", "label": "program_comparator", "label_id": 2},
+  {"text": "Хочу знать плюсы и минусы медицины и биологии.", "label": "program_comparator", "label_id": 2},
+  {"text": "Медицина менен биологиянын артыкчылыктары жана кемчиликтери.", "label": "program_comparator", "label_id": 2},
+  {"text": "Объясни разницу двух специальностей: финансы и бухучёт.", "label": "program_comparator", "label_id": 2},
+  {"text": "Эки адистиктин айырмасын түшүндүр: финансы жана бухгалтерия.", "label": "program_comparator", "label_id": 2}
+
 ]
