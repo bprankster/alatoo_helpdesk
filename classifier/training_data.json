@@ -134,7 +134,7 @@
   {"text": "Что платят больше после IT или после экономики?", "label": "program_comparator", "label_id": 2},
   {"text": "Менин документтерим жоголду. Жардам берүүчүнү чакырыңыз.", "label": "human_handoff", "label_id": 3},
   {"text": "Мне нужно поговорить о переводе из другого университета", "label": "human_handoff", "label_id": 3},
-  {"text": "У меня инвалидность. Есть ли льготы? Нужен специалист.", "label": "human_handoff", "label_id": 3}
+  {"text": "У меня инвалидность. Есть ли льготы? Нужен специалист.", "label": "human_handoff", "label_id": 3},
   {"text": "Менин ОРТ балым 145. Кире аламбы?", "label": "ort_validator", "label_id": 0},
   {"text": "Мой ОРТ 138. Можно поступить на инженерию?", "label": "ort_validator", "label_id": 0},
   {"text": "У меня 110 баллов ОРТ. Это минимум?", "label": "ort_validator", "label_id": 0},
