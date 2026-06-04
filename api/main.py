@@ -22,6 +22,7 @@ from contextlib import asynccontextmanager
 import gradio as gr
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from api.chat_endpoint import router as chat_router
 from api.telegram_bot import router as telegram_router, set_webhook
@@ -78,6 +79,10 @@ app.add_middleware(
 
 app.include_router(chat_router)
 app.include_router(telegram_router)
+
+# Serve ui/assets/ (logo, favicon) at /ui_assets — must be mounted before Gradio
+_assets_dir = os.path.join(os.path.dirname(__file__), "..", "ui", "assets")
+app.mount("/ui_assets", StaticFiles(directory=_assets_dir), name="ui_assets")
 
 from ui.kiosk import build_demo
 gradio_app = gr.mount_gradio_app(app, build_demo(), path="/kiosk")
