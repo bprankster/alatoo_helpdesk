@@ -21,6 +21,16 @@ _cfg_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
 with open(_cfg_path) as _f:
     _cfg = yaml.safe_load(_f)
 
+# Resolve config paths relative to project root, not CWD
+_PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+
+
+def _abs(rel_path: str) -> str:
+    """Make a config path absolute regardless of CWD."""
+    p = Path(rel_path)
+    return str(p if p.is_absolute() else _PROJECT_ROOT / p)
+
+
 from data_ingestion.pdf_extractor import extract_all_pdfs
 from data_ingestion.chunker import chunk_pages
 
@@ -43,7 +53,7 @@ def get_embedding_model() -> SentenceTransformer:
 # ── ChromaDB client ────────────────────────────────────────────────────────────
 
 def get_collection() -> chromadb.Collection:
-    client = chromadb.PersistentClient(path=_cfg["chroma"]["persist_dir"])
+    client = chromadb.PersistentClient(path=_abs(_cfg["chroma"]["persist_dir"]))
     collection = client.get_or_create_collection(
         name=_cfg["chroma"]["collection_name"],
         metadata={"hnsw:space": "cosine"},
@@ -75,32 +85,45 @@ def _infer_faculty_from_txt(filename: str) -> str:
 
 
 def load_manual_pages(manual_dir: str | None = None) -> list[dict]:
-    """Read all .txt files from data/raw/manual/ as page dicts for the chunker."""
-    dir_path = Path(manual_dir or _cfg["data"]["raw_manual"])
-    if not dir_path.exists():
-        print(f"[embedder] Manual dir not found: {dir_path}. Skipping.")
+    """
+    Read .txt files from data/raw/manual/{ru,ky,en}/ subdirs.
+    Each subdirectory name becomes the `language` metadata field on every chunk.
+    Falls back to scanning the base dir directly (tags as 'ru') for old flat layouts.
+    """
+    base_dir = Path(manual_dir) if manual_dir else Path(_abs(_cfg["data"]["raw_manual"]))
+    if not base_dir.exists():
+        print(f"[embedder] Manual dir not found: {base_dir}. Skipping.")
         return []
 
-    txt_files = sorted(dir_path.glob("*.txt"))
-    if not txt_files:
-        print(f"[embedder] No .txt files found in {dir_path}.")
-        return []
+    # Collect (directory, language_code) pairs
+    lang_dirs: list[tuple[Path, str]] = [
+        (base_dir / lang, lang)
+        for lang in ("ru", "ky", "en")
+        if (base_dir / lang).is_dir()
+    ]
+    if not lang_dirs:
+        # Legacy flat layout — treat everything as Russian
+        lang_dirs = [(base_dir, "ru")]
 
     pages: list[dict] = []
     today = str(date.today())
-    for txt_file in txt_files:
-        text = txt_file.read_text(encoding="utf-8").strip()
-        if len(text) < 50:
-            continue
-        pages.append({
-            "text": text,
-            "faculty": _infer_faculty_from_txt(txt_file.name),
-            "doc_type": "manual",
-            "source_file": txt_file.name,
-            "page": 0,
-            "last_updated": today,
-        })
-        print(f"[embedder] Loaded manual: {txt_file.name} ({len(text)} chars)")
+
+    for lang_dir, lang in lang_dirs:
+        txt_files = sorted(lang_dir.glob("*.txt"))
+        for txt_file in txt_files:
+            text = txt_file.read_text(encoding="utf-8").strip()
+            if len(text) < 50:
+                continue
+            pages.append({
+                "text": text,
+                "faculty": _infer_faculty_from_txt(txt_file.name),
+                "doc_type": "manual",
+                "source_file": txt_file.name,
+                "language": lang,
+                "page": 0,
+                "last_updated": today,
+            })
+            print(f"[embedder] [{lang}] {txt_file.name} ({len(text)} chars)")
 
     print(f"[embedder] {len(pages)} manual text files loaded.")
     return pages
@@ -124,6 +147,7 @@ def upsert_chunks(chunks: list[dict], batch_size: int = 64) -> int:
         metadatas.append({
             "faculty": c.get("faculty", "General"),
             "doc_type": c.get("doc_type", "general"),
+            "language": c.get("language", "ru"),
             "last_updated": c.get("last_updated", ""),
             "source_url": c.get("source_url", ""),
             "source_file": c.get("source_file", ""),

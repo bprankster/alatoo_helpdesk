@@ -19,7 +19,8 @@ _cfg_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
 with open(_cfg_path) as _f:
     _cfg = yaml.safe_load(_f)
 
-PDF_DIR = _cfg["data"]["raw_pdfs"]
+_PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+PDF_DIR = str(_PROJECT_ROOT / _cfg["data"]["raw_pdfs"].lstrip("./"))
 
 
 def _infer_faculty_from_filename(filename: str) -> str:

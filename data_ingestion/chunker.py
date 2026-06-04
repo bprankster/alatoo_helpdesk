@@ -67,6 +67,7 @@ def chunk_pages(
                 "text": split_text.strip(),
                 "faculty": page.get("faculty", "General"),
                 "doc_type": page.get("doc_type", "general"),
+                "language": page.get("language", "ru"),
                 "last_updated": page.get("last_updated", ""),
                 "chunk_id": _make_chunk_id(split_text, source, idx),
             }
