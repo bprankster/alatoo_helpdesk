@@ -363,7 +363,13 @@ footer { display: none !important; }
     border-color: #002366 !important;
     color: white !important;
 }
-#orient-options input[type="radio"] { display: none !important; }
+#orient-options input[type="radio"] {
+    position: absolute !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    width: 0 !important;
+    height: 0 !important;
+}
 
 /* ── Example chips ───────────────────────────────── */
 .examples-holder table { border: none !important; }
@@ -543,8 +549,10 @@ def start_orientation(history: list, user_id: str, lang: str):
     return new_history, user_id, options_update
 
 
-def select_orient_option(choice: str | None, history: list, user_id: str):
-    """Handle a click on one of the A/B/C/D Radio option buttons."""
+def select_orient_option(evt: gr.SelectData, history: list, user_id: str):
+    """Handle a click on one of the A/B/C/D Radio option buttons.
+    Uses gr.SelectData so it only fires on explicit user click, never on programmatic reset."""
+    choice = evt.value if evt else None
     if not choice:
         return history, user_id, gr.update()
     letter = choice[0]  # "A. some text" → "A"
@@ -782,10 +790,10 @@ def build_demo() -> gr.Blocks:
             outputs=[orient_chatbot, user_id_state, orient_options],
         )
 
-        # Orientation — Radio option click (auto-submits)
-        orient_options.change(
+        # Orientation — Radio option click (auto-submits on explicit user click only)
+        orient_options.select(
             fn=select_orient_option,
-            inputs=[orient_options, orient_chatbot, user_id_state],
+            inputs=[orient_chatbot, user_id_state],
             outputs=[orient_chatbot, user_id_state, orient_options],
         )
 
