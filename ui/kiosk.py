@@ -11,15 +11,17 @@ import sys
 import uuid
 from pathlib import Path
 
+# Must be set before importing gradio to override /tmp default (avoids permission errors)
+_GRADIO_TMP = Path(__file__).parent.parent / "tmp" / "gradio"
+_GRADIO_TMP.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("GRADIO_TEMP_DIR", str(_GRADIO_TMP))
+
 import gradio as gr
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from agent import guardrails
 from agent.core import run_agent
 from agent.session import clear_session, get_session
-
-_GRADIO_TMP = Path(__file__).parent.parent / "tmp" / "gradio"
-_GRADIO_TMP.mkdir(parents=True, exist_ok=True)
 
 TITLE = "Ала-Тоо Университети — Кабылуу"
 
@@ -395,7 +397,6 @@ def build_demo() -> gr.Blocks:
         title=TITLE,
         theme=gr.themes.Base(),
         css=CSS,
-        tmp_dir=str(_GRADIO_TMP),
     ) as demo:
 
         user_id_state = gr.State(_generate_user_id)

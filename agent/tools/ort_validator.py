@@ -10,6 +10,7 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
 
 import yaml
 from langchain_core.tools import Tool
@@ -20,7 +21,8 @@ _cfg_path = os.path.join(os.path.dirname(__file__), "..", "..", "config.yaml")
 with open(_cfg_path) as _f:
     _cfg = yaml.safe_load(_f)
 
-_ORT_FILE = _cfg["data"]["ort_thresholds"]
+_PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
+_ORT_FILE = str(_PROJECT_ROOT / _cfg["data"]["ort_thresholds"].lstrip("./"))
 
 SCORE_PATTERN = re.compile(r"\b(\d{2,3})\s*(?:баллов|балл|points|упай|очков|очко)?\b")
 

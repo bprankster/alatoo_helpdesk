@@ -12,10 +12,16 @@ Routes:
 
 import os
 import sys
+from pathlib import Path
 
 import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+# Set Gradio temp dir before importing gradio — must come first
+_gradio_tmp = Path(__file__).parent.parent / "tmp" / "gradio"
+_gradio_tmp.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("GRADIO_TEMP_DIR", str(_gradio_tmp))
 
 from contextlib import asynccontextmanager
 

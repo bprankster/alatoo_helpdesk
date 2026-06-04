@@ -11,6 +11,7 @@ import json
 import os
 import sys
 from collections import Counter
+from pathlib import Path
 
 import yaml
 from langchain_core.tools import Tool
@@ -21,12 +22,15 @@ _cfg_path = os.path.join(os.path.dirname(__file__), "..", "..", "config.yaml")
 with open(_cfg_path) as _f:
     _cfg = yaml.safe_load(_f)
 
+_PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
+_RIASEC_FILE = str(_PROJECT_ROOT / _cfg["data"]["riasec_mapping"].lstrip("./"))
+
 MAX_QUESTIONS: int = _cfg["orientation"]["max_questions"]
 VALID_ANSWERS = {"R", "I", "A", "S", "E", "C"}
 
 
 def _load_mapping() -> dict:
-    with open(_cfg["data"]["riasec_mapping"], encoding="utf-8") as f:
+    with open(_RIASEC_FILE, encoding="utf-8") as f:
         return json.load(f)
 
 
