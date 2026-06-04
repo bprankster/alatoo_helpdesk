@@ -4,6 +4,7 @@ dataset.py — Dataset loader for KyrgyzBERT intent classification fine-tuning.
 
 import json
 import os
+import random
 from typing import Optional
 
 import torch
@@ -19,9 +20,15 @@ class IntentDataset(Dataset):
         max_length: int = 128,
         split: str = "train",
         val_ratio: float = 0.15,
+        seed: int = 42,
     ):
         with open(data_path, encoding="utf-8") as f:
             all_items = json.load(f)
+
+        # Must shuffle before split — data is ordered by class,
+        # so without this the val set only sees the last class.
+        random.seed(seed)
+        random.shuffle(all_items)
 
         split_idx = int(len(all_items) * (1 - val_ratio))
         if split == "train":

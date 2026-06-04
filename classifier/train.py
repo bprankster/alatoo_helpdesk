@@ -29,7 +29,7 @@ with open(_cfg_path) as _f:
     _cfg = yaml.safe_load(_f)
 
 
-def train(data_path: str, epochs: int = 5, batch_size: int = 16):
+def train(data_path: str, epochs: int = 10, batch_size: int = 16):
     import torch
     from torch.utils.data import DataLoader
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
@@ -103,7 +103,11 @@ def train(data_path: str, epochs: int = 5, batch_size: int = 16):
 
         acc = accuracy_score(all_true, all_preds)
         f1 = f1_score(all_true, all_preds, average="macro", zero_division=0)
+        per_class = f1_score(all_true, all_preds, average=None, zero_division=0)
+        label_names = list(_cfg["classifier"]["labels"].keys())
+        class_str = " | ".join(f"{label_names[i]}={per_class[i]:.2f}" for i in range(len(per_class)))
         print(f"[train] Epoch {epoch+1}/{epochs} | loss={avg_loss:.4f} | acc={acc:.3f} | f1_macro={f1:.3f}")
+        print(f"         {class_str}")
 
         if f1 > best_f1:
             best_f1 = f1
@@ -125,7 +129,7 @@ if __name__ == "__main__":
         default=os.path.join(os.path.dirname(__file__), "training_data.json"),
         help="Path to training_data.json",
     )
-    parser.add_argument("--epochs", type=int, default=5)
+    parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=16)
     args = parser.parse_args()
     train(args.data, args.epochs, args.batch_size)
