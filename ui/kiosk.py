@@ -445,15 +445,34 @@ def _parse_orient_options(text: str) -> list[str]:
             options.append(f"{m.group(1)}. {m.group(2).strip()}")
     return options
 
-def _run_tts(text: str) -> str | None:
-    """Generate TTS audio for web platform. Returns wav path or None."""
+def _tts_available() -> bool:
+    """Return True if kani-tts is installed and enabled for web."""
     try:
-        from tts.kani_tts import speak, is_enabled
-        if is_enabled("web"):
-            return speak(text)
+        from tts.kani_tts import is_enabled
+        return is_enabled("web")
+    except Exception:
+        return False
+
+def _run_tts(text: str) -> str | None:
+    """Generate TTS audio. Returns wav path or None."""
+    try:
+        from tts.kani_tts import speak
+        return speak(text)
     except Exception as e:
-        print(f"[tts] skipped: {e}")
+        print(f"[tts] error: {e}")
     return None
+
+def tts_for_last_reply(history: list):
+    """Called via .then() after text response — generates audio for the last assistant message."""
+    if not history:
+        return gr.update(visible=False)
+    last = history[-1]
+    if isinstance(last, dict) and last.get("role") == "assistant":
+        text = last.get("content", "")
+    else:
+        return gr.update(visible=False)
+    audio = _run_tts(text)
+    return gr.update(value=audio, visible=audio is not None)
 
 def _sidebar_section_html(label: str) -> str:
     return f'<p class="sidebar-label">{label}</p>'
@@ -489,32 +508,28 @@ def change_language(lang: str):
 
 def respond(message: str, history: list, user_id: str):
     if not message.strip():
-        return "", history, user_id, gr.update()
+        return "", history, user_id
     guard = guardrails.check(message)
     if guard.blocked or guard.off_topic:
-        return "", history + [_msg("user", message), _msg("assistant", guard.reply)], user_id, gr.update()
+        return "", history + [_msg("user", message), _msg("assistant", guard.reply)], user_id
     session = get_session(user_id)
     reply = run_agent(message, session)
-    audio = _run_tts(reply)
-    tts_update = gr.update(value=audio, visible=audio is not None)
-    return "", history + [_msg("user", message), _msg("assistant", reply)], user_id, tts_update
+    return "", history + [_msg("user", message), _msg("assistant", reply)], user_id
 
 
 def respond_voice(audio_path: str | None, history: list, user_id: str, lang: str):
     if audio_path is None:
-        return history, user_id, gr.update()
+        return history, user_id
     from voice.stt import transcribe
     text = transcribe(audio_path)
     if not text:
-        return history + [_msg("assistant", _s(lang, "not_recognized"))], user_id, gr.update()
+        return history + [_msg("assistant", _s(lang, "not_recognized"))], user_id
     guard = guardrails.check(text)
     if guard.blocked or guard.off_topic:
-        return history + [_msg("user", f"🎙 {text}"), _msg("assistant", guard.reply)], user_id, gr.update()
+        return history + [_msg("user", f"🎙 {text}"), _msg("assistant", guard.reply)], user_id
     session = get_session(user_id)
     reply = run_agent(text, session)
-    audio = _run_tts(reply)
-    tts_update = gr.update(value=audio, visible=audio is not None)
-    return history + [_msg("user", f"🎙 {text}"), _msg("assistant", reply)], user_id, tts_update
+    return history + [_msg("user", f"🎙 {text}"), _msg("assistant", reply)], user_id
 
 
 def start_orientation(history: list, user_id: str, lang: str):
@@ -557,7 +572,7 @@ def respond_orientation(message: str, history: list, user_id: str):
 
 def reset_chat(user_id: str):
     clear_session(user_id)
-    return [], _generate_user_id(), gr.update(value=None, visible=False)
+    return [], _generate_user_id(), gr.update(value=None, visible=False)  # tts_player
 
 
 def reset_orientation(user_id: str):
@@ -569,6 +584,8 @@ def reset_orientation(user_id: str):
 
 def build_demo() -> gr.Blocks:
     default_s = STRINGS[DEFAULT_LANG]
+
+    _tts_on = _tts_available()  # checked once at startup
 
     with gr.Blocks(title=TITLE, theme=gr.themes.Base(), css=CSS) as demo:
 
@@ -649,17 +666,18 @@ def build_demo() -> gr.Blocks:
                             default_s["send_voice"],
                             elem_classes=["voice-send-btn"],
                         )
-                        gr.HTML('<hr class="sidebar-divider">')
-                        gr.HTML(_sidebar_section_html(default_s["tts_section"]))
-                        tts_player = gr.Audio(
-                            label=None,
-                            type="filepath",
-                            autoplay=True,
-                            visible=False,
-                            interactive=False,
-                            container=False,
-                            elem_id="tts-player",
-                        )
+                        with gr.Column(visible=_tts_on, elem_id="tts-section"):
+                            gr.HTML('<hr class="sidebar-divider">')
+                            gr.HTML(_sidebar_section_html(default_s["tts_section"]))
+                            tts_player = gr.Audio(
+                                label=None,
+                                type="filepath",
+                                autoplay=True,
+                                visible=False,
+                                interactive=False,
+                                container=False,
+                                elem_id="tts-player",
+                            )
 
             # ─── Orientation tab ────────────────────────────────────────────────
             with gr.TabItem("🎯 Профориентация / Orientation"):
@@ -721,24 +739,34 @@ def build_demo() -> gr.Blocks:
             ],
         )
 
-        # Chat — text
-        send_btn.click(
+        # Chat — text (text shows immediately, TTS loads after via .then())
+        _tts_outputs = [tts_player] if _tts_on else []
+        _tts_fn      = tts_for_last_reply if _tts_on else None
+
+        _send_ev = send_btn.click(
             fn=respond,
             inputs=[msg_input, chatbot, user_id_state],
-            outputs=[msg_input, chatbot, user_id_state, tts_player],
+            outputs=[msg_input, chatbot, user_id_state],
         )
-        msg_input.submit(
+        if _tts_on:
+            _send_ev.then(fn=_tts_fn, inputs=[chatbot], outputs=_tts_outputs)
+
+        _submit_ev = msg_input.submit(
             fn=respond,
             inputs=[msg_input, chatbot, user_id_state],
-            outputs=[msg_input, chatbot, user_id_state, tts_player],
+            outputs=[msg_input, chatbot, user_id_state],
         )
+        if _tts_on:
+            _submit_ev.then(fn=_tts_fn, inputs=[chatbot], outputs=_tts_outputs)
 
         # Chat — voice
-        send_voice_btn.click(
+        _voice_ev = send_voice_btn.click(
             fn=respond_voice,
             inputs=[audio_input, chatbot, user_id_state, lang_state],
-            outputs=[chatbot, user_id_state, tts_player],
+            outputs=[chatbot, user_id_state],
         )
+        if _tts_on:
+            _voice_ev.then(fn=_tts_fn, inputs=[chatbot], outputs=_tts_outputs)
 
         # Chat — reset
         reset_btn.click(
