@@ -185,6 +185,7 @@ def query_collection(
     query_text: str,
     n_results: int | None = None,
     where: dict | None = None,
+    similarity_threshold: float | None = None,
 ) -> list[dict]:
     """
     Semantic search over ChromaDB.
@@ -193,11 +194,21 @@ def query_collection(
         query_text: user query (any of RU/KG/EN)
         n_results: number of results (defaults to config retrieval.top_k)
         where: optional ChromaDB metadata filter, e.g. {"faculty": "Медицинский факультет"}
+        similarity_threshold: cosine distance cutoff — results above this are dropped.
+            Defaults to config retrieval.similarity_threshold (0.40).
+            An empty list return signals the agent to use the fallback message.
 
     Returns:
         list of dicts with keys: text, faculty, doc_type, source_url/source_file, distance
+        Empty list means no in-scope content found — caller should use fallback message.
     """
     k = n_results or _cfg["retrieval"]["top_k"]
+    threshold = (
+        similarity_threshold
+        if similarity_threshold is not None
+        else _cfg["retrieval"].get("similarity_threshold", 0.40)
+    )
+
     model = get_embedding_model()
     collection = get_collection()
 
@@ -218,6 +229,8 @@ def query_collection(
     distances = results.get("distances", [[]])[0]
 
     for doc, meta, dist in zip(docs, metas, distances):
+        if dist > threshold:
+            continue  # not in knowledge base — skip rather than hallucinate
         output.append({
             "text": doc,
             "faculty": meta.get("faculty", ""),
