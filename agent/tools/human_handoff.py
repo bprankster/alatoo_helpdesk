@@ -36,8 +36,12 @@ CONTACT_INFO = (
 )
 
 
+def _is_real_token(token: str) -> bool:
+    """A real Telegram bot token always contains a colon, e.g. '123456:ABC-...'"""
+    return bool(token) and ":" in token and "placeholder" not in token.lower() and "your_" not in token.lower()
+
 def _send_telegram_message(text: str) -> bool:
-    if not _TELEGRAM_BOT_TOKEN or not _OFFICER_CHAT_ID:
+    if not _is_real_token(_TELEGRAM_BOT_TOKEN) or not _OFFICER_CHAT_ID:
         print("[handoff] Telegram credentials not configured — skipping send.")
         return False
     try:

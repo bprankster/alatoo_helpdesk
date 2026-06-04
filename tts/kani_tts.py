@@ -7,7 +7,9 @@ Loads on demand per request; unloads after each call to free VRAM for Qwen3/BGE-
 """
 
 import os
+import re
 import sys
+import uuid
 from pathlib import Path
 
 import torch
@@ -18,6 +20,23 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 _cfg_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
 with open(_cfg_path) as _f:
     _cfg = yaml.safe_load(_f)
+
+_PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+
+_MAX_TTS_CHARS = 300  # keep synthesis under ~5s; truncate longer replies
+
+def _truncate(text: str, limit: int = _MAX_TTS_CHARS) -> str:
+    """Strip markdown symbols and truncate to the nearest sentence end."""
+    text = re.sub(r"[*_`#\[\]()]", "", text).strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    # Try to break at the last sentence boundary
+    for sep in (".", "!", "?", "\n"):
+        idx = cut.rfind(sep)
+        if idx > limit // 2:
+            return cut[: idx + 1].strip()
+    return cut.strip()
 
 _model = None
 
@@ -39,31 +58,24 @@ def load() -> None:
     print("[tts] Model loaded.")
 
 
-def speak(text: str, filename: str = "response.wav") -> str:
+def speak(text: str) -> str:
     """
-    Convert text to Kyrgyz speech. Returns path to the generated wav file.
+    Convert text to Kyrgyz speech. Returns absolute path to the generated wav file.
     Loads model on demand, unloads after each call to free VRAM.
-
     Only call after checking is_enabled(platform).
-
-    Args:
-        text: text to speak (Kyrgyz or Russian)
-        filename: output filename (relative to tts.output_dir)
-
-    Returns:
-        Absolute path to the generated wav file.
     """
     global _model
     try:
         if _model is None:
             load()
 
-        output_dir = Path(_cfg["tts"]["output_dir"])
+        output_dir = _PROJECT_ROOT / _cfg["tts"]["output_dir"].lstrip("./")
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = str(output_dir / filename)
+        output_path = str(output_dir / f"{uuid.uuid4().hex[:12]}.wav")
 
-        audio, _ = _model(text)
-        _model.save_audio(audio, output_path)
+        audio, _ = _model(_truncate(text))
+        _model.save_audio(audio, output_path, sample_rate=22050)
+        print(f"[tts] Saved: {output_path}")
         return output_path
     finally:
         if _model is not None:

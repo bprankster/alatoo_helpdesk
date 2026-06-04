@@ -94,7 +94,9 @@ def transcribe(audio_path: str) -> str:
             str(audio_path),
             generate_kwargs={
                 "task": "transcribe",
-                "language": None,  # auto-detect
+                "language": "ky",          # force Kyrgyz — auto-detect mis-fires on KG/RU mix
+                "temperature": 0.0,        # deterministic decoding, suppresses hallucinations
+                "condition_on_prev_tokens": False,  # prevents hallucination loops between segments
             },
         )
         text = result["text"].strip()
