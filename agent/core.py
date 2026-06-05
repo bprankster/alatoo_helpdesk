@@ -20,6 +20,7 @@ from agent.tools.ort_validator import ort_validator_tool
 from agent.tools.orientation_engine import orientation_engine_tool
 from agent.tools.program_comparator import program_comparator_tool
 from agent.tools.human_handoff import human_handoff_tool
+from agent.tools.kb_search import university_kb_search_tool
 
 with open(os.path.join(os.path.dirname(__file__), "..", "config.yaml")) as _f:
     _cfg = yaml.safe_load(_f)
@@ -38,8 +39,7 @@ Your role is strictly limited to:
 HARD RULES — never violate these:
   - CRITICAL: Always respond in the exact same language the student used. Kyrgyz input → Kyrgyz response. Russian input → Russian response. English input → English response. Never switch languages.
   - NEVER guarantee admission, scholarships, or specific outcomes.
-  - If you cannot find the answer in your tools or knowledge base, say:
-    "У меня нет этой информации. Пожалуйста, обратитесь в приёмную комиссию."
+  - CRITICAL: If University_KB_Search returns [NO_INFORMATION], you MUST immediately call Human_Handoff_Trigger — never tell the student you don't know, always escalate to a human officer.
   - NEVER discuss topics unrelated to Ala-Too University admissions or career orientation.
   - Do not fabricate ORT scores, tuition fees, or program details.
 
@@ -97,6 +97,7 @@ def get_agent_executor() -> AgentExecutor:
             orientation_engine_tool,
             program_comparator_tool,
             human_handoff_tool,
+            university_kb_search_tool,
         ]
         prompt = PromptTemplate.from_template(SYSTEM_PROMPT)
         agent = create_react_agent(get_llm(), tools, prompt)
@@ -113,13 +114,71 @@ def get_agent_executor() -> AgentExecutor:
 
 # ── Language detection ────────────────────────────────────────────────────────
 
+# Kyrgyz words that don't exist (or are very rare) in Russian.
+# Covers common speech without the unique chars ң/ү/ө.
+_KY_WORDS = frozenset({
+    # Pronouns & possessives
+    'мен', 'сен', 'биз', 'силер',
+    'менин', 'сенин', 'биздин', 'силердин',
+    # Question words
+    'кайсы', 'кантип', 'эмне', 'канча', 'качан', 'кайда', 'кимге', 'кимди',
+    # Verbs / forms
+    'болот', 'болду', 'болобу', 'болсо', 'болсом',
+    'барсам', 'барат', 'барды', 'барсаңыз', 'барсаңызбы',
+    'кирем', 'кирет', 'кирүү', 'тапшырам', 'тапшыруу',
+    'билбейм', 'билбейтам', 'билгим',
+    # Conjunctions / particles
+    'жана', 'эми', 'эле', 'эмес', 'дагы',
+    # Nouns / suffixed forms common in queries
+    'керек', 'жок', 'кабылуу', 'жатакана', 'адистик', 'тандоо',
+    'балым', 'упайым', 'балыңыз', 'упайыңыз',
+    'факультетке', 'факультеттер', 'факультетти',
+    'адистикти', 'адистикке', 'адистиктер',
+    # Greetings
+    'саламатсызбы', 'саламатсыздарбы', 'рахмат', 'салам',
+})
+
+
+def _fix_kyrgyz(text: str) -> str:
+    """Remove Kazakh-alphabet contamination from Kyrgyz LLM output.
+
+    Qwen3 conflates Kyrgyz and Kazakh. Kyrgyz does NOT use ғ (U+0493) or қ (U+049B).
+    This replaces those characters and the most common Kazakh word forms.
+    """
+    # Kazakh letters absent from Kyrgyz alphabet
+    text = text.replace("ғ", "г").replace("Ғ", "Г")
+    text = text.replace("қ", "к").replace("Қ", "К")
+    # Common Kazakh word → Kyrgyz equivalent
+    _word_fixes = [
+        ("барлық", "бардык"), ("Барлық", "Бардык"),
+        ("барлыгы", "бардыгы"), ("Барлыгы", "Бардыгы"),
+        ("бағыт", "багыт"), ("Бағыт", "Багыт"),
+        ("бағыттар", "багыттар"), ("Бағыттар", "Багыттар"),
+        ("бағдар", "багыт"), ("Бағдар", "Багыт"),
+    ]
+    for kaz, kyr in _word_fixes:
+        text = text.replace(kaz, kyr)
+    return text
+
+
+_KY_TRANSLATE_PROMPT = (
+    "/no_think Которул: которул текстти кыргыз тилине (казак тилине эмес). "
+    "Маанилүү: кыргыз алфавитинде «ғ» жана «қ» тамгалары жок — колдонбо. "
+    "Туура кыргызча: «бардык» (барлық эмес), «илим» (ғылым эмес), «багыт» (бағыт эмес). "
+    "Сандарды, эможини жана форматтоону сакта. "
+    "КОТОРУЛГАН ТЕКСТТИ ГАНА КАЙТАРып бер:\n\n"
+)
+
+
 def detect_language(text: str) -> str:
-    """
-    Detect language using character sets. No external libraries needed.
-    Kyrgyz has unique characters not present in Russian: ң ү ө
-    """
-    kyrgyz_specific = {'ң', 'ү', 'ө', 'Ң', 'Ү', 'Ө'}
-    if any(c in kyrgyz_specific for c in text):
+    """Detect RU/KY/EN. Checks unique Kyrgyz chars first, then vocabulary, then Cyrillic."""
+    kyrgyz_chars = {'ң', 'ү', 'ө', 'Ң', 'Ү', 'Ө'}
+    if any(c in kyrgyz_chars for c in text):
+        return 'ky'
+    # Word-based detection: any Kyrgyz-specific word → Kyrgyz
+    import re as _re
+    words = set(_re.sub(r'[^\w\s]', ' ', text.lower()).split())
+    if words & _KY_WORDS:
         return 'ky'
     if any('Ѐ' <= c <= 'ӿ' for c in text):
         return 'ru'
@@ -147,6 +206,25 @@ def run_agent(user_input: str, session: SessionState) -> str:
     _set_active_session(session)
     session.add_message("user", user_input)
 
+    # ── Orientation fast-path: if a RIASEC survey is active, route directly ──────
+    # The ReAct LLM cannot reliably route short answers ("A", "B", "2", etc.)
+    # to the correct tool. Bypass it entirely when a survey is in progress.
+    if session.riasec_in_progress():
+        try:
+            print("[router] RIASEC in progress → direct orientation call")
+            tool_result = orientation_engine_tool.func(user_input)
+            input_lang = detect_language(user_input)
+            if input_lang == "ky":
+                llm = get_llm(thinking=False)
+                answer = llm.invoke(_KY_TRANSLATE_PROMPT + tool_result).content.strip()
+                answer = _fix_kyrgyz(answer)
+            else:
+                answer = tool_result
+            session.add_message("assistant", answer)
+            return answer
+        except Exception as e:
+            print(f"[router] Orientation direct call failed ({e}), falling back to ReAct")
+
     # Try classifier fast path
     try:
         from agent.router import route_query
@@ -172,12 +250,8 @@ def run_agent(user_input: str, session: SessionState) -> str:
                 input_lang = detect_language(user_input)
                 if input_lang == 'ky':
                     llm = get_llm(thinking=False)
-                    translate_prompt = (
-                        "/no_think Которул: төмөнкү текстти кыргыз тилине которуп бер. "
-                        "Бардык сандарды, эможилерди жана форматтоону сакта. "
-                        "КОТОРУЛГАН ТЕКСТТИ ГАНА КАЙТАРып бер:\n\n" + tool_result
-                    )
-                    answer = llm.invoke(translate_prompt).content.strip()
+                    answer = llm.invoke(_KY_TRANSLATE_PROMPT + tool_result).content.strip()
+                    answer = _fix_kyrgyz(answer)
                 else:
                     answer = tool_result
 
@@ -191,7 +265,11 @@ def run_agent(user_input: str, session: SessionState) -> str:
 
     # Build language-prefixed input for ReAct
     lang_prefix = {
-        'ky': 'МААНИЛҮҮ: Кыргыз тилинде гана жооп бер. ',
+        'ky': (
+            'МААНИЛҮҮ: Кыргыз тилинде гана жооп бер (казак тилинде эмес). '
+            'Кыргыз алфавитинде «ғ» жана «қ» тамгалары жок. '
+            'Туура: бардык, илим, багыт. Туура эмес: барлық, ғылым, бағыт. '
+        ),
         'en': 'IMPORTANT: Reply in English only. ',
         'ru': '',
     }.get(input_lang, '')
@@ -201,6 +279,8 @@ def run_agent(user_input: str, session: SessionState) -> str:
             "input": lang_prefix + user_input
         })
         answer: str = result.get("output", "").strip()
+        if input_lang == 'ky':
+            answer = _fix_kyrgyz(answer)
     except Exception as e:
         print(f"[agent] Error: {e}")
         answer = _cfg["agent"]["fallback_message"]

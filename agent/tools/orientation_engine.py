@@ -28,6 +28,15 @@ _RIASEC_FILE = str(_PROJECT_ROOT / _cfg["data"]["riasec_mapping"].lstrip("./"))
 MAX_QUESTIONS: int = _cfg["orientation"]["max_questions"]
 VALID_ANSWERS = {"R", "I", "A", "S", "E", "C"}
 
+_RIASEC_NAMES = {
+    "R": "Реалистичный",
+    "I": "Исследовательский",
+    "A": "Артистический",
+    "S": "Социальный",
+    "E": "Предприимчивый",
+    "C": "Конвенциональный",
+}
+
 
 def _load_mapping() -> dict:
     with open(_RIASEC_FILE, encoding="utf-8") as f:
@@ -46,31 +55,43 @@ def _extract_answer(text: str) -> str | None:
     return None
 
 
-def _compute_result(answers: list[str]) -> tuple[str, list[str]]:
-    """Return top-2 RIASEC types and matching MUA faculty names."""
+def _compute_result(answers: list[str]) -> tuple[str, list[dict]]:
+    """Return top-2 RIASEC types and faculty recommendations scored by profile match."""
     mapping = _load_mapping()
     counts = Counter(answers)
     top2 = [t for t, _ in counts.most_common(2)]
     riasec_type = "".join(top2)
+    student_set = set(top2)
 
-    faculties: list[str] = []
-    riasec_to_faculty = mapping.get("riasec_to_faculty", {})
-    for t in top2:
-        faculties.extend(riasec_to_faculty.get(t, []))
+    # Score each faculty by how many of its RIASEC types overlap with the student's top types
+    scored: list[tuple[int, str, dict]] = []
+    for name, info in mapping.get("faculties", {}).items():
+        overlap = len(set(info.get("riasec_types", [])) & student_set)
+        if overlap > 0:
+            scored.append((overlap, name, info))
 
-    seen: set[str] = set()
-    unique = [f for f in faculties if not (f in seen or seen.add(f))]
-    return riasec_type, unique
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    recs = [
+        {
+            "faculty": name,
+            "programs": info.get("programs", []),
+            "ort_req": info.get("additional_ort", ""),
+        }
+        for _, name, info in scored[:2]
+    ]
+    return riasec_type, recs
 
 
 def _generate_next_question(history: list[dict]) -> dict:
     """
-    Use Qwen3 (thinking mode) to generate the next adaptive RIASEC question.
+    Use Qwen3 to generate the next adaptive RIASEC question.
 
     Returns a dict: {question: str, options: [{text: str, riasec: str}]}
     Falls back to a safe static question if LLM call fails.
     """
-    from agent.core import get_llm, format_prompt
+    import re as _re
+    from agent.core import get_llm
 
     is_first = len(history) == 0
     history_text = "\n".join(
@@ -83,38 +104,40 @@ def _generate_next_question(history: list[dict]) -> dict:
     else:
         context = (
             f"Предыдущие ответы:\n{history_text}\n\n"
-            "Определи неясные RIASEC-типы. Задай наиболее дискриминирующий следующий вопрос."
+            "Определи RIASEC-типы, которые ещё не подтверждены. "
+            "Задай вопрос, максимально различающий оставшиеся типы."
         )
 
-    prompt_text = (
+    prompt = (
+        "/no_think "
         "Ты консультант по профориентации (Holland RIASEC: "
         "R=Реалистичный I=Исследовательский A=Артистический "
         "S=Социальный E=Предприимчивый C=Конвенциональный).\n"
         f"{context}\n"
-        f"Вопрос №{len(history)+1} из {MAX_QUESTIONS}. На русском языке. Ситуационный. "
-        "Ровно 4 варианта ответа — каждый отражает разный RIASEC-тип.\n"
-        "Верни ТОЛЬКО валидный JSON без markdown-обёртки:\n"
-        '{"question":"текст вопроса","options":['
-        '{"text":"вариант А","riasec":"R"},'
-        '{"text":"вариант Б","riasec":"I"},'
-        '{"text":"вариант В","riasec":"A"},'
-        '{"text":"вариант Г","riasec":"S"}]}'
+        f"Придумай вопрос №{len(history)+1} из {MAX_QUESTIONS} на русском языке. "
+        "Ситуационный сценарий. Ровно 4 варианта ответа, каждый — отдельный RIASEC-тип (R/I/A/S/E/C).\n"
+        "Ответь СТРОГО только JSON-объектом без markdown и пояснений:\n"
+        '{"question":"...","options":['
+        '{"text":"...","riasec":"R"},{"text":"...","riasec":"I"},'
+        '{"text":"...","riasec":"A"},{"text":"...","riasec":"S"}]}'
     )
 
-    llm = get_llm(thinking=True)
+    raw = ""
+    llm = get_llm()
     try:
-        raw = llm.invoke(format_prompt(prompt_text, thinking=True)).content
-        # Strip /think tokens
+        raw = llm.invoke(prompt).content
+        # Strip any <think>...</think> block
         if "</think>" in raw:
-            raw = raw.split("</think>")[-1].strip()
-        # Strip markdown code fences if present
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        return json.loads(raw.strip())
+            raw = raw.split("</think>", 1)[-1].strip()
+        # Strip markdown code fences
+        raw = _re.sub(r"```\w*\n?", "", raw).strip()
+        # Find JSON object (robust: handles leading/trailing text)
+        m = _re.search(r'\{.*\}', raw, _re.DOTALL)
+        if m:
+            return json.loads(m.group())
+        return json.loads(raw)
     except Exception as e:
-        print(f"[orientation] LLM question generation failed: {e}")
+        print(f"[orientation] LLM generation failed: {e} | raw={repr(raw[:200])}")
         return _fallback_question(len(history))
 
 
@@ -170,10 +193,13 @@ def _fallback_question(step: int) -> dict:
     return fallbacks[step % len(fallbacks)]
 
 
+_CYR_LABELS = ["А", "Б", "В", "Г"]
+
+
 def _format_question(q_data: dict, step: int) -> str:
     """Format a question dict into a readable string for the student."""
     options_text = "\n".join(
-        f"  {chr(65+i)}. {opt['text']}"
+        f"  {_CYR_LABELS[i]}. {opt['text']}"
         for i, opt in enumerate(q_data["options"])
     )
     return (
@@ -205,6 +231,35 @@ def _resolve_option_answer(text: str, options: list[dict]) -> str | None:
     return None
 
 
+def _format_result(riasec_type: str, recs: list[dict]) -> str:
+    """Format the final RIASEC survey result with faculty + program recommendations."""
+    type_desc = " + ".join(_RIASEC_NAMES.get(t, t) for t in riasec_type)
+    lines = [
+        f"Спасибо! Тест завершён.",
+        f"\n🧠 Ваш профиль RIASEC: **{riasec_type}** ({type_desc})",
+    ]
+
+    for i, rec in enumerate(recs):
+        label = "🎓 Основная рекомендация" if i == 0 else "🔄 Альтернатива"
+        lines.append(f"\n{label}: **{rec['faculty']}**")
+
+        programs = rec["programs"][:4]
+        if programs:
+            lines.append("📚 Программы:")
+            for prog in programs:
+                careers = ", ".join(prog["careers"][:3])
+                lines.append(f"  • **{prog['name']}** ({prog['duration']}) — {careers}")
+
+        ort = rec.get("ort_req", "")
+        if ort and ort != "не требуется":
+            lines.append(f"  ⚠️ Требования ОРТ: {ort}")
+
+    lines.append(
+        "\n💬 Чтобы сравнить программы или проверить проходной балл ОРТ — просто спросите!"
+    )
+    return "\n".join(lines)
+
+
 def orientation_engine(input_text: str) -> str:
     """
     Adaptive RIASEC survey with LLM-generated questions.
@@ -228,14 +283,8 @@ def orientation_engine(input_text: str) -> str:
     # ── Survey already complete ────────────────────────────────────────────────
     if session.riasec_complete() and session.riasec_result:
         riasec_type = session.riasec_result
-        _, faculties = _compute_result(session.riasec_answers)
-        faculty_list = "\n".join(f"  • {f}" for f in faculties)
-        return (
-            f"Ваш профиль RIASEC: **{riasec_type}**.\n\n"
-            f"Рекомендуемые факультеты Ала-Тоо Университета:\n{faculty_list}\n\n"
-            "Хотите узнать подробнее об одной из программ? "
-            "Я могу сравнить их или проверить ваш балл ОРТ."
-        )
+        _, recs = _compute_result(session.riasec_answers)
+        return _format_result(riasec_type, recs)
 
     # ── Process answer if survey is in progress ────────────────────────────────
     if session.riasec_in_progress():
@@ -266,16 +315,10 @@ def orientation_engine(input_text: str) -> str:
 
         # Survey complete?
         if len(session.riasec_answers) >= MAX_QUESTIONS:
-            riasec_type, faculties = _compute_result(session.riasec_answers)
+            riasec_type, recs = _compute_result(session.riasec_answers)
             session.riasec_result = riasec_type
             session.riasec_step = MAX_QUESTIONS
-            faculty_list = "\n".join(f"  • {f}" for f in faculties)
-            return (
-                f"Спасибо! Вы ответили на все {MAX_QUESTIONS} вопроса.\n\n"
-                f"🧠 Ваш профиль RIASEC: **{riasec_type}**.\n\n"
-                f"🎓 Рекомендуемые факультеты МУА:\n{faculty_list}\n\n"
-                "Хотите узнать подробнее о любой из этих программ?"
-            )
+            return _format_result(riasec_type, recs)
 
         # Generate next question
         session.riasec_step += 1

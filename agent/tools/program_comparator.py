@@ -107,6 +107,7 @@ def program_comparator(input_text: str) -> str:
             query_text=f"программа учебный план карьера специальность {prog}",
             n_results=top_k,
             where=where,
+            similarity_threshold=0.65,
         )
 
         if not results:
@@ -132,11 +133,11 @@ program_comparator_tool = Tool(
     name="Program_Comparator_RAG",
     func=program_comparator,
     description=(
-        "Use this tool when a student wants to compare two or more university programs "
-        "or faculties side by side. "
-        "Examples: 'Сравни IT и экономику', 'Compare психологию и журналистику', "
-        "'Что лучше — медицина или инженерия?'. "
-        "Input: the student's comparison request as a full sentence. "
-        "Do NOT use for ORT score checks or when student is undecided about career path."
+        "Use this tool ONLY when a student explicitly asks to COMPARE two or more programs "
+        "side by side using words like 'сравни', 'compare', 'vs', 'versus', 'или', 'or'. "
+        "Examples: 'Сравни IT и экономику', 'Compare психологию и журналистику'. "
+        "Do NOT use for: ORT score checks, 'which faculty should I choose', "
+        "'кайсы факультетке барсам', 'what faculties exist', general faculty questions, "
+        "or when student is undecided about career path — use University_KB_Search instead."
     ),
 )

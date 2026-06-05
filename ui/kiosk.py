@@ -1,7 +1,7 @@
 """
 kiosk.py — Gradio web kiosk UI.
 
-Two tabs: Chat (voice sidebar + TTS) + Orientation (Radio answer buttons).
+Two tabs: Chat (quick questions + voice sidebar + TTS) + Orientation (Radio answer buttons).
 Language selector as compact dropdown in header.
 """
 
@@ -11,7 +11,6 @@ import sys
 import uuid
 from pathlib import Path
 
-# Must come before `import gradio` to redirect upload temp dir
 _GRADIO_TMP = Path(__file__).parent.parent / "tmp" / "gradio"
 _GRADIO_TMP.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("GRADIO_TEMP_DIR", str(_GRADIO_TMP))
@@ -47,7 +46,7 @@ STRINGS = {
         "orient_hint":        "Тест 5 суроодон турат. Вариантты тандаңыз же өз жообуңузду жазыңыз.",
         "voice_section":      "🎙 Үн киргизүү",
         "tts_section":        "🔊 Жооп угуу",
-        "or_type":            "же өз жообуңузду жазыңыз:",
+        "quick_label":        "⚡ Тез суроолор",
     },
     LANG_RU: {
         "chat_ph":            "Введите вопрос…",
@@ -64,7 +63,7 @@ STRINGS = {
         "orient_hint":        "Тест из 5 вопросов. Выберите вариант или напишите своими словами.",
         "voice_section":      "🎙 Голосовой ввод",
         "tts_section":        "🔊 Аудио ответ",
-        "or_type":            "или напишите своими словами:",
+        "quick_label":        "⚡ Быстрые вопросы",
     },
     LANG_EN: {
         "chat_ph":            "Type your question…",
@@ -81,258 +80,324 @@ STRINGS = {
         "orient_hint":        "5-question test. Choose an option or write your own answer.",
         "voice_section":      "🎙 Voice input",
         "tts_section":        "🔊 Audio reply",
-        "or_type":            "or write in your own words:",
+        "quick_label":        "⚡ Quick questions",
     },
 }
 
+# ── Quick questions (example chips per language) ────────────────────────────────
+
 EXAMPLES_KY = [
-    "Менин ОРТ балым 138. CS факультетине кире аламбы?",
-    "ОРТ 195 болсо кандай скидка берилет?",
-    "Медицина факультетине кирүү үчүн кандай предметтер керек?",
-    "IT жана Экономика программаларын салыштырып бер",
-    "МУАга документтерди кантип жана качан тапшырам?",
-    "Кибербезопасность адистиги кандай мүмкүнчүлүктөрдү берет?",
-    "Юриспруденция факультетине минималдуу ОРТ упайы канча?",
-    "Психология жана Журналистика программаларынын айырмасы эмне?",
-    "МУАда окуу акысы канча? Бөлүп төлөсө болобу?",
-    "Ала-Тоо университетинде жатакана барбы?",
-    "Инженерия факультетине кирүү үчүн математикадан канча упай керек?",
-    "Адамды чакырыңыз — кабылуу боюнча сүйлөшкүм келет",
+    "Менин ОРТ упайым 145. МУАга поступление кыла аламбы?",
+    "ОРТ 183 болсо кандай скидка берилет?",
+    "МУАга поступление үчүн кандай документтер керек?",
+    "МУАда кайсы факультеттер бар?",
+    "IT жана Инженерия факультети жөнүндө айтып бер",
+    "Медицина факультетине кирүү үчүн эмне керек?",
+    "Экономика факультети жөнүндө маалымат бер",
+    "Кесиптик тест өткүм келет. Кайсы адистик мага ылайыктуу?",
 ]
+
 EXAMPLES_RU = [
-    "Мой ОРТ 145 — могу поступить на Computer Science?",
+    "Мой ОРТ 145 — могу поступить в МУА?",
     "Какая скидка при ОРТ 183?",
     "Какие документы нужны для поступления в МУА?",
-    "Сравни программы Кибербезопасность и Психология",
-    "Расскажи про факультет инженерии и информатики",
-    "Хочу поговорить с сотрудником приёмной комиссии",
+    "МУАда кайсы факультеттер бар?",
+    "IT жана Инженерия факультети жөнүндө айтып бер",
+    "Медицина факультетине кирүү үчүн эмне керек?",
+    "Кесиптик тест өткүм келет. Кайсы адистик мага ылайыктуу?",
 ]
+
 EXAMPLES_EN = [
-    "What is the minimum ORT score to apply to Ala-Too?",
-    "What discount do I get with ORT score 200?",
-    "Compare Computer Engineering and Data Science programs",
-    "What documents are required for admission?",
-    "I'd like to speak to an admissions officer",
+    "My ORT score is 145. Can I apply to Ala-Too University?",
+    "What discount do I get with ORT score 183?",
+    "What documents are required for admission to Ala-Too?",
+    "What faculties are available at Ala-Too University?",
+    "Tell me about the Engineering and IT faculty at Ala-Too",
+    "I want to take a career orientation test to find the right major",
 ]
 
 # ── CSS ─────────────────────────────────────────────────────────────────────────
 CSS = """
-/* ── Base ──────────────────────────────────────────── */
+/* ── Reset & base ───────────────────────────────────────── */
 .gradio-container {
-    max-width: 980px !important;
-    margin: 0 auto !important;
-    padding: 0 10px 24px !important;
-    background: #F1F5F9 !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 0 32px !important;
+    background: #EEF2F7 !important;
     font-family: 'Segoe UI', -apple-system, system-ui, sans-serif !important;
 }
-body { background: #F1F5F9 !important; }
+body { background: #EEF2F7 !important; margin: 0 !important; }
 footer { display: none !important; }
 
-/* ── Header row — flush, no gap ─────────────────────── */
+/* Constrain tabs content to 1020px centered */
+.tabs {
+    max-width: 1020px !important;
+    margin: 0 auto !important;
+    padding: 0 12px !important;
+}
+
+/* ── Header row ─────────────────────────────────────────── */
 #header-row {
     gap: 0 !important;
     margin: 0 !important;
     padding: 0 !important;
 }
-#header-row > .wrap,
-#header-row > div {
-    gap: 0 !important;
-    padding: 0 !important;
+#header-row > .wrap, #header-row > div {
+    gap: 0 !important; padding: 0 !important;
 }
 
-/* ── Language dropdown column (dark blue) ───────────── */
+/* ── Language dropdown ──────────────────────────────────── */
 #lang-col {
-    background: #002366 !important;
-    border-radius: 0 12px 0 0 !important;
-    padding: 0 18px !important;
+    background: #001A4D !important;
+    border-radius: 0 !important;
+    padding: 0 20px !important;
     display: flex !important;
     align-items: center !important;
     justify-content: flex-end !important;
-    min-height: 78px !important;
-    max-width: 200px !important;
+    min-height: 82px !important;
+    max-width: 230px !important;
 }
-#lang-col > div,
-#lang-col .block,
-#lang-col .wrap {
+#lang-col > div, #lang-col .block, #lang-col .wrap {
+    background: transparent !important;
+    border: none !important; padding: 0 !important; box-shadow: none !important;
+}
+
+/* Gradio 5 custom dropdown (not a native <select>) */
+#lang-dd {
+    background: rgba(255,255,255,0.12) !important;
+    border: 1.5px solid rgba(255,255,255,0.35) !important;
+    border-radius: 8px !important;
+    min-width: 160px !important;
+    cursor: pointer !important;
+    transition: border-color 0.15s, background 0.15s !important;
+}
+#lang-dd:hover, #lang-dd:focus-within {
+    background: rgba(255,255,255,0.22) !important;
+    border-color: rgba(255,255,255,0.70) !important;
+}
+/* All text/input elements inside dropdown → white */
+#lang-dd .block, #lang-dd .wrap, #lang-dd input,
+#lang-dd button, #lang-dd span, #lang-dd div {
     background: transparent !important;
     border: none !important;
-    padding: 0 !important;
     box-shadow: none !important;
+    color: white !important;
+    font-size: 0.86rem !important;
+    min-height: unset !important;
 }
-#lang-dd select {
-    background: rgba(255,255,255,0.10) !important;
-    border: 1.5px solid rgba(255,255,255,0.28) !important;
-    color: #FFFFFF !important;
-    border-radius: 8px !important;
-    font-size: 0.84rem !important;
-    padding: 6px 10px !important;
-    cursor: pointer !important;
-    min-width: 148px !important;
-    outline: none !important;
-    transition: border-color 0.15s !important;
+#lang-dd svg, #lang-dd svg path, #lang-dd svg polyline {
+    stroke: rgba(255,255,255,0.80) !important;
 }
-#lang-dd select:hover,
-#lang-dd select:focus {
-    border-color: rgba(255,255,255,0.55) !important;
+/* Dropdown options list */
+#lang-dd ul, #lang-dd .options, #lang-dd [data-testid="dropdown-menu"] {
+    background: #002060 !important;
+    border: 1px solid rgba(255,255,255,0.20) !important;
+    border-radius: 6px !important;
 }
-#lang-dd option {
-    background: #002F6C !important;
+#lang-dd li, #lang-dd .item {
+    color: white !important;
+    font-size: 0.86rem !important;
+}
+#lang-dd li:hover, #lang-dd .item:hover {
+    background: rgba(255,255,255,0.15) !important;
     color: white !important;
 }
 
-/* ── Tab nav ──────────────────────────────────────── */
+/* ── Tab nav ────────────────────────────────────────────── */
 .tab-nav {
     background: white !important;
     border: none !important;
-    border-bottom: 2px solid #E5E7EB !important;
+    border-bottom: 2px solid #E8EDF4 !important;
     border-radius: 12px 12px 0 0 !important;
-    padding: 0 16px !important;
-    gap: 0 !important;
+    padding: 0 20px !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06) !important;
 }
 .tab-nav button {
-    font-size: 0.9rem !important;
+    font-size: 0.92rem !important;
     font-weight: 500 !important;
-    color: #9CA3AF !important;
-    padding: 12px 24px !important;
+    color: #94A3B8 !important;
+    padding: 14px 26px !important;
     border: none !important;
     background: transparent !important;
-    border-bottom: 2.5px solid transparent !important;
+    border-bottom: 3px solid transparent !important;
     margin-bottom: -2px !important;
     border-radius: 0 !important;
-    transition: color 0.12s !important;
+    transition: color 0.15s !important;
+    letter-spacing: 0.01em !important;
 }
 .tab-nav button.selected {
-    color: #002366 !important;
+    color: #1A3A6E !important;
     font-weight: 700 !important;
-    border-bottom-color: #002366 !important;
+    border-bottom-color: #1A3A6E !important;
 }
-.tab-nav button:hover:not(.selected) { color: #4B5563 !important; }
+.tab-nav button:hover:not(.selected) { color: #475569 !important; }
 
-/* ── Tab content ─────────────────────────────────── */
+/* ── Tab content panel ──────────────────────────────────── */
 .tabitem {
     background: white !important;
-    border: 1.5px solid #E5E7EB !important;
+    border: 1.5px solid #E8EDF4 !important;
     border-top: none !important;
-    border-radius: 0 0 12px 12px !important;
-    padding: 16px 18px 14px !important;
+    border-radius: 0 0 14px 14px !important;
+    padding: 20px 20px 16px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05) !important;
 }
 
-/* ── Chatbots ────────────────────────────────────── */
+/* ── Chatbot ────────────────────────────────────────────── */
 #chatbot, #orient-chatbot {
-    border: none !important;
-    background: transparent !important;
+    border: 1.5px solid #E8EDF4 !important;
+    border-radius: 12px !important;
+    background: #FAFCFF !important;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.04) !important;
 }
 
-/* ── Text inputs ─────────────────────────────────── */
+/* ── Text inputs ────────────────────────────────────────── */
 .chat-input textarea, .orient-input textarea {
-    border: 1.5px solid #E2E8F0 !important;
+    border: 1.5px solid #D1DCE8 !important;
     border-radius: 10px !important;
-    font-size: 0.92rem !important;
-    background: white !important;
-    padding: 10px 14px !important;
+    font-size: 0.93rem !important;
+    background: #FAFCFF !important;
+    padding: 11px 15px !important;
     resize: none !important;
-    line-height: 1.5 !important;
-    transition: border-color 0.12s, box-shadow 0.12s !important;
+    line-height: 1.55 !important;
+    transition: border-color 0.15s, box-shadow 0.15s !important;
+    color: #1E293B !important;
 }
 .chat-input textarea:focus, .orient-input textarea:focus {
-    border-color: #002366 !important;
+    border-color: #1A3A6E !important;
     outline: none !important;
-    box-shadow: 0 0 0 3px rgba(0,35,102,0.08) !important;
+    box-shadow: 0 0 0 3px rgba(26,58,110,0.10) !important;
+    background: white !important;
 }
 
-/* ── Primary send button ─────────────────────────── */
+/* ── Primary send button ────────────────────────────────── */
 .send-btn button {
-    background: #002366 !important;
+    background: linear-gradient(135deg, #1A3A6E, #2352A0) !important;
     color: white !important;
     border: none !important;
     border-radius: 10px !important;
     font-weight: 600 !important;
-    font-size: 0.88rem !important;
-    min-height: 46px !important;
-    padding: 0 18px !important;
-    transition: background 0.12s !important;
+    font-size: 0.90rem !important;
+    min-height: 48px !important;
+    padding: 0 20px !important;
+    letter-spacing: 0.01em !important;
+    transition: opacity 0.15s, transform 0.12s, box-shadow 0.15s !important;
+    box-shadow: 0 2px 6px rgba(26,58,110,0.30) !important;
     white-space: nowrap !important;
 }
-.send-btn button:hover { background: #003087 !important; }
+.send-btn button:hover {
+    opacity: 0.92 !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 12px rgba(26,58,110,0.36) !important;
+}
+.send-btn button:active { transform: translateY(0) !important; }
 
-/* ── Gold orientation start button ──────────────── */
+/* ── Example chips (quick questions) ───────────────────── */
+.examples-holder table { border: none !important; }
+.examples-holder table td { padding: 2px 4px !important; border: none !important; }
+.examples-holder table td button, table.examples td button {
+    font-size: 0.80rem !important;
+    border-radius: 16px !important;
+    padding: 5px 13px !important;
+    background: white !important;
+    border: 1.5px solid #CBD5E1 !important;
+    color: #334155 !important;
+    font-weight: 500 !important;
+    white-space: nowrap !important;
+    transition: all 0.13s !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+}
+.examples-holder table td button:hover, table.examples td button:hover {
+    background: #EEF4FF !important;
+    border-color: #93B4E8 !important;
+    color: #1A3A6E !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 2px 6px rgba(26,58,110,0.12) !important;
+}
+
+/* ── Gold orientation start button ─────────────────────── */
 .orient-start button {
-    background: linear-gradient(135deg, #C4972A, #DBA830) !important;
+    background: linear-gradient(135deg, #B8811E, #D4A832 50%, #B8811E) !important;
     color: #1C0F00 !important;
     border: none !important;
     border-radius: 10px !important;
     font-weight: 700 !important;
-    font-size: 0.95rem !important;
-    min-height: 52px !important;
+    font-size: 0.96rem !important;
+    min-height: 54px !important;
     width: 100% !important;
-    box-shadow: 0 2px 8px rgba(196,151,42,0.28) !important;
-    transition: transform 0.12s, box-shadow 0.12s !important;
+    letter-spacing: 0.01em !important;
+    box-shadow: 0 3px 10px rgba(196,151,42,0.32) !important;
+    transition: transform 0.12s, box-shadow 0.15s, opacity 0.15s !important;
 }
 .orient-start button:hover {
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 14px rgba(196,151,42,0.38) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 18px rgba(196,151,42,0.42) !important;
+    opacity: 0.95 !important;
 }
 
-/* ── Ghost / secondary buttons ───────────────────── */
+/* ── Ghost / secondary buttons ──────────────────────────── */
 .ghost-btn button {
     background: transparent !important;
-    color: #9CA3AF !important;
-    border: 1px solid #E5E7EB !important;
+    color: #94A3B8 !important;
+    border: 1.5px solid #E2E8F0 !important;
     border-radius: 8px !important;
-    font-size: 0.8rem !important;
+    font-size: 0.82rem !important;
     min-height: 36px !important;
-    transition: all 0.12s !important;
+    padding: 0 14px !important;
+    transition: all 0.15s !important;
     white-space: nowrap !important;
 }
-.ghost-btn button:hover { color: #6B7280 !important; border-color: #D1D5DB !important; }
-
-/* ── Voice sidebar ───────────────────────────────── */
-#voice-sidebar {
+.ghost-btn button:hover {
+    color: #64748B !important;
+    border-color: #CBD5E1 !important;
     background: #F8FAFC !important;
-    border: 1.5px solid #E2E8F0 !important;
+}
+
+/* ── Voice sidebar ──────────────────────────────────────── */
+#voice-sidebar {
+    background: #F6F9FC !important;
+    border: 1.5px solid #E8EDF4 !important;
     border-radius: 12px !important;
-    padding: 14px 14px 10px !important;
+    padding: 16px 14px 12px !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04) !important;
 }
 .sidebar-label {
-    font-size: 0.78rem !important;
-    font-weight: 600 !important;
+    font-size: 0.74rem !important;
+    font-weight: 700 !important;
     color: #64748B !important;
     text-transform: uppercase !important;
-    letter-spacing: 0.05em !important;
-    margin: 0 0 8px 0 !important;
+    letter-spacing: 0.06em !important;
+    margin: 0 0 10px 0 !important;
+    display: block !important;
 }
 .sidebar-divider {
     border: none !important;
     border-top: 1px solid #E2E8F0 !important;
-    margin: 12px 0 !important;
+    margin: 14px 0 !important;
 }
 .voice-send-btn button {
     background: #475569 !important;
     color: white !important;
     border: none !important;
     border-radius: 8px !important;
-    font-size: 0.84rem !important;
+    font-size: 0.86rem !important;
     font-weight: 600 !important;
-    min-height: 38px !important;
+    min-height: 40px !important;
     width: 100% !important;
-    margin-top: 6px !important;
-    transition: background 0.12s !important;
+    margin-top: 8px !important;
+    transition: background 0.15s !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.12) !important;
 }
 .voice-send-btn button:hover { background: #334155 !important; }
 
-/* ── TTS audio player ────────────────────────────── */
-#tts-player {
-    border-radius: 8px !important;
-    overflow: hidden !important;
-}
+/* ── TTS audio player ───────────────────────────────────── */
+#tts-player { border-radius: 8px !important; overflow: hidden !important; }
 
-/* ── Orientation answer radio options ────────────── */
-#orient-options .wrap,
-#orient-options > div {
+/* ── Orientation radio options ──────────────────────────── */
+#orient-options .wrap, #orient-options > div {
     display: flex !important;
     flex-direction: column !important;
     gap: 8px !important;
-    padding: 4px 0 8px !important;
+    padding: 6px 0 10px !important;
     background: transparent !important;
     border: none !important;
 }
@@ -340,93 +405,80 @@ footer { display: none !important; }
     background: white !important;
     border: 1.5px solid #E2E8F0 !important;
     border-radius: 10px !important;
-    padding: 12px 16px !important;
+    padding: 13px 18px !important;
     cursor: pointer !important;
-    font-size: 0.9rem !important;
+    font-size: 0.92rem !important;
     color: #374151 !important;
     transition: all 0.15s !important;
     display: flex !important;
     align-items: center !important;
     gap: 10px !important;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
-    line-height: 1.4 !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05) !important;
+    line-height: 1.45 !important;
 }
 #orient-options label:hover {
-    border-color: #002366 !important;
-    background: #EFF6FF !important;
-    color: #002366 !important;
-    transform: translateX(3px) !important;
-    box-shadow: 0 2px 8px rgba(0,35,102,0.12) !important;
+    border-color: #1A3A6E !important;
+    background: #EEF4FF !important;
+    color: #1A3A6E !important;
+    transform: translateX(4px) !important;
+    box-shadow: 0 3px 10px rgba(26,58,110,0.12) !important;
 }
 #orient-options label:has(input:checked) {
-    background: #002366 !important;
-    border-color: #002366 !important;
+    background: #1A3A6E !important;
+    border-color: #1A3A6E !important;
     color: white !important;
 }
 #orient-options input[type="radio"] {
-    position: absolute !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-    width: 0 !important;
-    height: 0 !important;
-}
-
-/* ── Example chips ───────────────────────────────── */
-.examples-holder table { border: none !important; }
-.examples-holder table td { padding: 2px 3px !important; border: none !important; }
-.examples-holder table td button, table.examples td button {
-    font-size: 0.78rem !important;
-    border-radius: 14px !important;
-    padding: 4px 12px !important;
-    background: #F8FAFC !important;
-    border: 1px solid #E2E8F0 !important;
-    color: #475569 !important;
-    font-weight: 500 !important;
-    white-space: nowrap !important;
-    transition: all 0.12s !important;
-}
-.examples-holder table td button:hover, table.examples td button:hover {
-    background: #EFF6FF !important;
-    border-color: #BFDBFE !important;
-    color: #1D4ED8 !important;
+    position: absolute !important; opacity: 0 !important;
+    pointer-events: none !important; width: 0 !important; height: 0 !important;
 }
 """
 
 HEADER_LEFT_HTML = """
-<div style="background:#002366;border-radius:12px 0 0 0;padding:14px 22px;
-    display:flex;align-items:center;gap:16px;font-family:'Segoe UI',system-ui,sans-serif;
-    flex:1;min-width:0;">
+<div style="background:linear-gradient(135deg,#001A4D 0%,#1A3A6E 100%);
+    border-radius:0;padding:14px 24px;
+    display:flex;align-items:center;gap:18px;
+    font-family:'Segoe UI',system-ui,sans-serif;flex:1;min-width:0;">
   <img src="/ui_assets/logo.png" onerror="this.style.display='none'"
-       style="height:50px;width:auto;object-fit:contain;flex-shrink:0;" alt="МУА">
+       style="height:52px;width:auto;object-fit:contain;flex-shrink:0;
+              filter:drop-shadow(0 1px 3px rgba(0,0,0,0.25));" alt="МУА">
   <div style="flex:1;min-width:0;">
-    <div style="font-size:1.1rem;font-weight:700;color:#FFFFFF;line-height:1.2;white-space:nowrap;">
+    <div style="font-size:1.08rem;font-weight:700;color:#FFFFFF;
+                line-height:1.25;white-space:nowrap;letter-spacing:0.01em;">
       Ала-Тоо Эл Аралык Университети
     </div>
-    <div style="font-size:0.73rem;color:rgba(255,255,255,0.6);margin-top:2px;">
-      Ala-Too International University &nbsp;·&nbsp; Bishkek
+    <div style="font-size:0.72rem;color:rgba(255,255,255,0.55);
+                margin-top:3px;letter-spacing:0.02em;">
+      Ala-Too International University &nbsp;·&nbsp; Bishkek, Kyrgyzstan
     </div>
   </div>
-  <div style="text-align:right;font-size:0.73rem;line-height:2;flex-shrink:0;">
+  <div style="text-align:right;font-size:0.73rem;line-height:2.1;flex-shrink:0;">
     <a href="https://wa.me/996555820000"
-       style="color:rgba(255,255,255,0.8);text-decoration:none;">📞 +996 555 820 000</a><br>
+       style="color:rgba(255,255,255,0.82);text-decoration:none;
+              transition:color 0.15s;">📞 +996 555 820 000</a><br>
     <a href="mailto:admission@alatoo.edu.kg"
-       style="color:rgba(255,255,255,0.8);text-decoration:none;">📧 admission@alatoo.edu.kg</a>
+       style="color:rgba(255,255,255,0.82);text-decoration:none;">
+       📧 admission@alatoo.edu.kg</a>
   </div>
 </div>
 """
 
 GOLD_LINE_HTML = (
-    '<div style="height:3px;background:linear-gradient(90deg,#C4972A,#E8B842 50%,#C4972A);'
-    'margin:0;border-radius:0;"></div>'
+    '<div style="height:3px;'
+    'background:linear-gradient(90deg,#8B5E10,#D4A832 35%,#F0CC5A 50%,#D4A832 65%,#8B5E10);'
+    'margin:0;"></div>'
 )
 
 FOOTER_HTML = """
-<div style="text-align:center;padding:10px 4px 4px;font-size:0.73rem;color:#94A3B8;
-    border-top:1px solid #E2E8F0;margin-top:8px;font-family:system-ui;">
+<div style="max-width:1020px;margin:10px auto 0;padding:12px 12px 4px;
+    text-align:center;font-size:0.72rem;color:#94A3B8;
+    border-top:1px solid #E8EDF4;font-family:system-ui;line-height:1.8;">
   🏫 ул. Анкара 1/10, мкр. «Тунгуч», Бишкек, D-блок, 1 этаж &nbsp;·&nbsp;
-  <a href="https://wa.me/996555820000" style="color:#002366;text-decoration:none;">+996 555 820 000</a>
+  <a href="https://wa.me/996555820000"
+     style="color:#1A3A6E;text-decoration:none;font-weight:500;">+996 555 820 000</a>
   &nbsp;·&nbsp;
-  <a href="mailto:admission@alatoo.edu.kg" style="color:#002366;text-decoration:none;">admission@alatoo.edu.kg</a>
+  <a href="mailto:admission@alatoo.edu.kg"
+     style="color:#1A3A6E;text-decoration:none;font-weight:500;">admission@alatoo.edu.kg</a>
 </div>
 """
 
@@ -443,52 +495,82 @@ def _s(lang: str, key: str) -> str:
     return STRINGS.get(lang, STRINGS[LANG_RU]).get(key, "")
 
 def _parse_orient_options(text: str) -> list[str]:
-    """Extract A/B/C/D option lines from an orientation question response."""
     options = []
     for line in text.split("\n"):
-        m = re.match(r"^\s*([A-D])\.\s*(.+)", line)
+        m = re.match(r"^\s*([А-ГA-D])\.\s*(.+)", line)
         if m:
             options.append(f"{m.group(1)}. {m.group(2).strip()}")
     return options
 
 def _tts_available() -> bool:
-    """Return True if kani-tts is installed and enabled for web."""
     try:
         from tts.kani_tts import is_enabled
         return is_enabled("web")
     except Exception:
         return False
 
+def _ollama_unload():
+    """Tell Ollama to release the LLM from VRAM before TTS loads."""
+    try:
+        import urllib.request, json, yaml
+        cfg_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
+        with open(cfg_path) as f:
+            cfg = yaml.safe_load(f)
+        model = cfg["llm"]["model"]
+        base_url = cfg["llm"]["base_url"].rstrip("/")
+        payload = json.dumps({"model": model, "keep_alive": 0}).encode()
+        req = urllib.request.Request(
+            f"{base_url}/api/generate",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=10)
+        print(f"[tts] Ollama unloaded {model} from VRAM")
+    except Exception as e:
+        print(f"[tts] Ollama unload failed (continuing): {e}")
+
+
 def _run_tts(text: str) -> str | None:
-    """Generate TTS audio. Returns wav path or None."""
     try:
         from tts.kani_tts import speak
-        return speak(text)
+        import uuid, shutil
+        _ollama_unload()          # free VRAM before loading TTS model
+        src = speak(text)
+        if src is None:
+            return None
+        # Copy into Gradio's temp dir so it's served via /file= endpoint
+        dst = str(_GRADIO_TMP / f"{uuid.uuid4().hex[:12]}_tts.wav")
+        shutil.copy2(src, dst)
+        print(f"[tts] ready: {dst}")
+        return dst
     except Exception as e:
         print(f"[tts] error: {e}")
     return None
 
-def tts_for_last_reply(history: list):
-    """Called via .then() after text response — generates audio for the last assistant message."""
+def tts_for_last_reply(history: list, lang: str):
+    print(f"[tts] tts_for_last_reply called: lang={lang!r} history_len={len(history) if history else 0}")
     if not history:
         return gr.update(visible=False)
     last = history[-1]
-    if isinstance(last, dict) and last.get("role") == "assistant":
-        text = last.get("content", "")
-    else:
+    if not (isinstance(last, dict) and last.get("role") == "assistant"):
+        return gr.update(visible=False)
+    text = last.get("content", "")
+    if not text.strip():
         return gr.update(visible=False)
     audio = _run_tts(text)
     return gr.update(value=audio, visible=audio is not None)
 
 def _sidebar_section_html(label: str) -> str:
-    return f'<p class="sidebar-label">{label}</p>'
+    return f'<span class="sidebar-label">{label}</span>'
 
 def _orient_hint_html(lang: str) -> str:
     hint = _s(lang, "orient_hint")
     return (
-        f'<p style="font-size:0.78rem;color:#9CA3AF;margin:4px 0 10px;padding:0;">'
-        f'{hint}</p>'
+        f'<p style="font-size:0.79rem;color:#94A3B8;margin:4px 0 12px;'
+        f'padding:0;line-height:1.5;">{hint}</p>'
     )
+
 
 
 # ── Callbacks ────────────────────────────────────────────────────────────────────
@@ -496,19 +578,20 @@ def _orient_hint_html(lang: str) -> str:
 def change_language(lang: str):
     s = STRINGS.get(lang, STRINGS[LANG_RU])
     return (
-        gr.update(placeholder=s["chat_ph"]),           # msg_input
-        gr.update(value=s["send"]),                     # send_btn
-        gr.update(value=s["send_voice"]),               # send_voice_btn
-        gr.update(value=s["reset"]),                    # reset_btn
-        gr.update(value=s["orient_start_label"]),       # start_orient_btn
-        gr.update(placeholder=s["orient_ph"]),          # orient_input
-        gr.update(value=s["orient_send"]),              # orient_send_btn
-        gr.update(value=s["orient_reset"]),             # orient_reset_btn
-        gr.update(value=_orient_hint_html(lang)),       # orient_hint
-        gr.update(visible=(lang == LANG_KY)),           # col_ky
-        gr.update(visible=(lang == LANG_RU)),           # col_ru
-        gr.update(visible=(lang == LANG_EN)),           # col_en
-        lang,                                           # lang_state
+        gr.update(placeholder=s["chat_ph"]),
+        gr.update(value=s["send"]),
+        gr.update(value=s["send_voice"]),
+        gr.update(value=s["reset"]),
+        gr.update(value=s["orient_start_label"]),
+        gr.update(placeholder=s["orient_ph"]),
+        gr.update(value=s["orient_send"]),
+        gr.update(value=s["orient_reset"]),
+        gr.update(value=_orient_hint_html(lang)),
+        gr.update(visible=(lang == LANG_KY)),   # col_ky
+        gr.update(visible=(lang == LANG_RU)),   # col_ru
+        gr.update(visible=(lang == LANG_EN)),   # col_en
+        gr.update(value=None, visible=False),   # tts_player — hide on lang switch
+        lang,                                   # lang_state
     )
 
 
@@ -542,30 +625,33 @@ def start_orientation(history: list, user_id: str, lang: str):
     s = STRINGS.get(lang, STRINGS[LANG_RU])
     clear_session(user_id + ":orient")
     session = get_session(user_id + ":orient")
-    reply = run_agent(s["orient_trigger"], session)
+
+    # Bypass ReAct — call orientation engine directly so the first question always appears
+    from agent.core import _set_active_session
+    from agent.tools.orientation_engine import orientation_engine
+    _set_active_session(session)
+    session.add_message("user", s["orient_user_label"])
+    reply = orientation_engine(s["orient_trigger"])
+    session.add_message("assistant", reply)
+
     new_history = [_msg("user", s["orient_user_label"]), _msg("assistant", reply)]
     options = _parse_orient_options(reply)
-    options_update = gr.update(choices=options, value=None, visible=bool(options))
-    return new_history, user_id, options_update
+    return new_history, user_id, gr.update(choices=options, value=None, visible=bool(options))
 
 
 def select_orient_option(evt: gr.SelectData, history: list, user_id: str):
-    """Handle a click on one of the A/B/C/D Radio option buttons.
-    Uses gr.SelectData so it only fires on explicit user click, never on programmatic reset."""
     choice = evt.value if evt else None
     if not choice:
         return history, user_id, gr.update()
-    letter = choice[0]  # "A. some text" → "A"
+    letter = choice[0]
     session = get_session(user_id + ":orient")
     reply = run_agent(letter, session)
     new_history = history + [_msg("user", choice), _msg("assistant", reply)]
     options = _parse_orient_options(reply)
-    options_update = gr.update(choices=options, value=None, visible=bool(options))
-    return new_history, user_id, options_update
+    return new_history, user_id, gr.update(choices=options, value=None, visible=bool(options))
 
 
 def respond_orientation(message: str, history: list, user_id: str):
-    """Free-text fallback for orientation — skips off-topic guardrail."""
     if not message.strip():
         return "", history, user_id, gr.update()
     guard = guardrails.check(message)
@@ -574,13 +660,12 @@ def respond_orientation(message: str, history: list, user_id: str):
     session = get_session(user_id + ":orient")
     reply = run_agent(message, session)
     options = _parse_orient_options(reply)
-    options_update = gr.update(choices=options, value=None, visible=bool(options))
-    return "", history + [_msg("user", message), _msg("assistant", reply)], user_id, options_update
+    return "", history + [_msg("user", message), _msg("assistant", reply)], user_id, gr.update(choices=options, value=None, visible=bool(options))
 
 
 def reset_chat(user_id: str):
     clear_session(user_id)
-    return [], _generate_user_id(), gr.update(value=None, visible=False)  # tts_player
+    return [], _generate_user_id(), gr.update(value=None, visible=False)
 
 
 def reset_orientation(user_id: str):
@@ -592,18 +677,17 @@ def reset_orientation(user_id: str):
 
 def build_demo() -> gr.Blocks:
     default_s = STRINGS[DEFAULT_LANG]
-
-    _tts_on = _tts_available()  # checked once at startup
+    _tts_on = _tts_available()
 
     with gr.Blocks(title=TITLE, theme=gr.themes.Base(), css=CSS) as demo:
 
         user_id_state = gr.State(_generate_user_id)
         lang_state    = gr.State(DEFAULT_LANG)
 
-        # ── Header: logo/title on left, language dropdown on right ──────────────
+        # ── Header ──────────────────────────────────────────────────────────────
         with gr.Row(elem_id="header-row", equal_height=True):
             gr.HTML(HEADER_LEFT_HTML)
-            with gr.Column(scale=0, min_width=190, elem_id="lang-col"):
+            with gr.Column(scale=0, min_width=200, elem_id="lang-col"):
                 lang_dd = gr.Dropdown(
                     choices=[LANG_KY, LANG_RU, LANG_EN],
                     value=DEFAULT_LANG,
@@ -617,16 +701,26 @@ def build_demo() -> gr.Blocks:
         # ── Tabs ────────────────────────────────────────────────────────────────
         with gr.Tabs():
 
-            # ─── Chat tab ──────────────────────────────────────────────────────
+            # ─── Chat tab ───────────────────────────────────────────────────────
             with gr.TabItem("💬 Чат / Chat"):
                 with gr.Row(equal_height=False):
 
                     # Main chat column
                     with gr.Column(scale=5):
                         chatbot = gr.Chatbot(
-                            type="messages", height=440,
+                            type="messages", height=420,
                             show_label=False, elem_id="chatbot",
                             bubble_full_width=False,
+                        )
+                        # TTS player — appears below chatbot after each reply
+                        tts_player = gr.Audio(
+                            label="🔊 Аудио ответ",
+                            type="filepath",
+                            autoplay=True,
+                            visible=False,
+                            interactive=False,
+                            container=True,
+                            elem_id="tts-player",
                         )
                         with gr.Row():
                             msg_input = gr.Textbox(
@@ -644,10 +738,10 @@ def build_demo() -> gr.Blocks:
                             reset_btn = gr.Button(
                                 default_s["reset"],
                                 elem_classes=["ghost-btn"],
-                                scale=1, min_width=90,
+                                scale=0, min_width=90,
                             )
 
-                        # Language-filtered example chips
+                        # ── Quick questions (example chips) ─────────────────────
                         with gr.Column(visible=(DEFAULT_LANG == LANG_KY)) as col_ky:
                             gr.Examples(EXAMPLES_KY, inputs=msg_input,
                                         label="💬 Суроолор мисалдары",
@@ -661,7 +755,7 @@ def build_demo() -> gr.Blocks:
                                         label="💬 Example questions",
                                         examples_per_page=len(EXAMPLES_EN))
 
-                    # Voice sidebar (right)
+                    # Voice sidebar
                     with gr.Column(scale=2, min_width=200, elem_id="voice-sidebar"):
                         gr.HTML(_sidebar_section_html(default_s["voice_section"]))
                         audio_input = gr.Audio(
@@ -674,18 +768,6 @@ def build_demo() -> gr.Blocks:
                             default_s["send_voice"],
                             elem_classes=["voice-send-btn"],
                         )
-                        with gr.Column(visible=_tts_on, elem_id="tts-section"):
-                            gr.HTML('<hr class="sidebar-divider">')
-                            gr.HTML(_sidebar_section_html(default_s["tts_section"]))
-                            tts_player = gr.Audio(
-                                label=None,
-                                type="filepath",
-                                autoplay=True,
-                                visible=False,
-                                interactive=False,
-                                container=False,
-                                elem_id="tts-player",
-                            )
 
             # ─── Orientation tab ────────────────────────────────────────────────
             with gr.TabItem("🎯 Профориентация / Orientation"):
@@ -698,21 +780,12 @@ def build_demo() -> gr.Blocks:
                     default_s["orient_start_label"],
                     elem_classes=["orient-start"],
                 )
-
-                # Clickable answer option buttons (auto-submit on click)
                 orient_options = gr.Radio(
-                    choices=[],
-                    value=None,
-                    label=None,
-                    container=False,
-                    visible=False,
-                    interactive=True,
+                    choices=[], value=None, label=None,
+                    container=False, visible=False, interactive=True,
                     elem_id="orient-options",
                 )
-
                 orient_hint = gr.HTML(_orient_hint_html(DEFAULT_LANG))
-
-                # Free-text fallback input
                 with gr.Row():
                     orient_input = gr.Textbox(
                         placeholder=default_s["orient_ph"],
@@ -725,7 +798,6 @@ def build_demo() -> gr.Blocks:
                         scale=1, min_width=110,
                         elem_classes=["send-btn"],
                     )
-
                 orient_reset_btn = gr.Button(
                     default_s["orient_reset"],
                     elem_classes=["ghost-btn"],
@@ -743,61 +815,47 @@ def build_demo() -> gr.Blocks:
                 start_orient_btn, orient_input, orient_send_btn, orient_reset_btn,
                 orient_hint,
                 col_ky, col_ru, col_en,
+                tts_player,
                 lang_state,
             ],
         )
 
-        # Chat — text (text shows immediately, TTS loads after via .then())
         _tts_outputs = [tts_player] if _tts_on else []
-        _tts_fn      = tts_for_last_reply if _tts_on else None
 
-        _send_ev = send_btn.click(
-            fn=respond,
-            inputs=[msg_input, chatbot, user_id_state],
-            outputs=[msg_input, chatbot, user_id_state],
-        )
-        if _tts_on:
-            _send_ev.then(fn=_tts_fn, inputs=[chatbot], outputs=_tts_outputs)
+        # ── Helper to wire send + optional TTS ──────────────────────────────────
+        def _wire(event):
+            if _tts_on:
+                event.then(fn=tts_for_last_reply,
+                           inputs=[chatbot, lang_state],
+                           outputs=_tts_outputs)
 
-        _submit_ev = msg_input.submit(
-            fn=respond,
-            inputs=[msg_input, chatbot, user_id_state],
-            outputs=[msg_input, chatbot, user_id_state],
-        )
-        if _tts_on:
-            _submit_ev.then(fn=_tts_fn, inputs=[chatbot], outputs=_tts_outputs)
+        # Chat — text input
+        _wire(send_btn.click(fn=respond, inputs=[msg_input, chatbot, user_id_state],
+                             outputs=[msg_input, chatbot, user_id_state]))
+        _wire(msg_input.submit(fn=respond, inputs=[msg_input, chatbot, user_id_state],
+                               outputs=[msg_input, chatbot, user_id_state]))
 
         # Chat — voice
-        _voice_ev = send_voice_btn.click(
-            fn=respond_voice,
-            inputs=[audio_input, chatbot, user_id_state, lang_state],
-            outputs=[chatbot, user_id_state],
-        )
-        if _tts_on:
-            _voice_ev.then(fn=_tts_fn, inputs=[chatbot], outputs=_tts_outputs)
+        _wire(send_voice_btn.click(fn=respond_voice,
+                                   inputs=[audio_input, chatbot, user_id_state, lang_state],
+                                   outputs=[chatbot, user_id_state]))
 
         # Chat — reset
-        reset_btn.click(
-            fn=reset_chat,
-            inputs=[user_id_state],
-            outputs=[chatbot, user_id_state, tts_player],
-        )
+        reset_btn.click(fn=reset_chat, inputs=[user_id_state],
+                        outputs=[chatbot, user_id_state, tts_player])
 
-        # Orientation — start
+
+        # ── Orientation ──────────────────────────────────────────────────────────
         start_orient_btn.click(
             fn=start_orientation,
             inputs=[orient_chatbot, user_id_state, lang_state],
             outputs=[orient_chatbot, user_id_state, orient_options],
         )
-
-        # Orientation — Radio option click (auto-submits on explicit user click only)
         orient_options.select(
             fn=select_orient_option,
             inputs=[orient_chatbot, user_id_state],
             outputs=[orient_chatbot, user_id_state, orient_options],
         )
-
-        # Orientation — free-text fallback
         orient_send_btn.click(
             fn=respond_orientation,
             inputs=[orient_input, orient_chatbot, user_id_state],
@@ -808,8 +866,6 @@ def build_demo() -> gr.Blocks:
             inputs=[orient_input, orient_chatbot, user_id_state],
             outputs=[orient_input, orient_chatbot, user_id_state, orient_options],
         )
-
-        # Orientation — reset
         orient_reset_btn.click(
             fn=reset_orientation,
             inputs=[user_id_state],

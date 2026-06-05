@@ -91,7 +91,12 @@ _assets_dir = os.path.join(os.path.dirname(__file__), "..", "ui", "assets")
 app.mount("/ui_assets", StaticFiles(directory=_assets_dir), name="ui_assets")
 
 from ui.kiosk import build_demo
-gradio_app = gr.mount_gradio_app(app, build_demo(), path="/kiosk")
+_audio_dir = os.path.join(os.path.dirname(__file__), "..", "audio_out")
+os.makedirs(_audio_dir, exist_ok=True)
+gradio_app = gr.mount_gradio_app(
+    app, build_demo(), path="/kiosk",
+    allowed_paths=[os.path.abspath(_audio_dir)],
+)
 
 
 if __name__ == "__main__":

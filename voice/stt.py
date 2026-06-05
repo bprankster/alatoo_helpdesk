@@ -13,9 +13,11 @@ with open(_cfg_path) as f:
 MODEL_PATH = "/home/cs/.cache/huggingface/hub/models--nineninesix--kyrgyz-whisper-medium/snapshots/bb00894d615500bc76aeb6b042d135555dfec125"
 
 _pipe = None
+_forced_decoder_ids = None  # computed once at load: forces <|ky|> + <|transcribe|>
+
 
 def load():
-    global _pipe
+    global _pipe, _forced_decoder_ids
     from transformers import (
         AutoModelForSpeechSeq2Seq,
         AutoProcessor,
@@ -43,9 +45,16 @@ def load():
     tokenizer = AutoTokenizer.from_pretrained(
         MODEL_PATH,
         trust_remote_code=True,
-        language="kyrgyz",
-        task="transcribe",
     )
+
+    # Build forced_decoder_ids manually so we bypass pipeline language validation.
+    # Standard Whisper doesn't list "ky"; using language= in generate_kwargs raises.
+    # Whisper decoder prefix: [<|startoftranscript|>, <|ky|>, <|transcribe|>]
+    # forced_decoder_ids is 1-indexed (position after startoftranscript).
+    ky_id = tokenizer.convert_tokens_to_ids("<|ky|>")
+    transcribe_id = tokenizer.convert_tokens_to_ids("<|transcribe|>")
+    _forced_decoder_ids = [[1, ky_id], [2, transcribe_id]]
+    print(f"[stt] forced_decoder_ids: <|ky|>={ky_id}, <|transcribe|>={transcribe_id}")
 
     _pipe = pipeline(
         "automatic-speech-recognition",
@@ -93,8 +102,7 @@ def transcribe(audio_path: str) -> str:
         result = pipe(
             str(audio_path),
             generate_kwargs={
-                "task": "transcribe",
-                "language": "ky",          # force Kyrgyz — auto-detect mis-fires on KG/RU mix
+                "forced_decoder_ids": _forced_decoder_ids,  # <|ky|> + <|transcribe|>
                 "temperature": 0.0,        # deterministic decoding, suppresses hallucinations
                 "condition_on_prev_tokens": False,  # prevents hallucination loops between segments
             },

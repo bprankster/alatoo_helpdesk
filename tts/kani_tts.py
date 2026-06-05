@@ -23,16 +23,32 @@ with open(_cfg_path) as _f:
 
 _PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
-_MAX_TTS_CHARS = 300  # keep synthesis under ~5s; truncate longer replies
+_MAX_TTS_CHARS = 1200  # ~20-30s of speech; model supports up to 3000 tokens
+
+def _clean_for_tts(text: str) -> str:
+    """Normalize LLM markdown output into plain speakable text."""
+    # Numbered / bulleted list items → inline with comma separator
+    text = re.sub(r"\n\s*[\-\*\•]\s*", ", ", text)
+    text = re.sub(r"\n\s*\d+[\.\)]\s*", ", ", text)
+    # Remove remaining markdown symbols
+    text = re.sub(r"[*_`#\[\]()>]", "", text)
+    # Collapse runs of whitespace / newlines into single space
+    text = re.sub(r"[\r\n\t]+", " ", text)
+    text = re.sub(r"  +", " ", text)
+    # Remove artefact comma after colon (": , item" → ": item")
+    text = re.sub(r":\s*,\s*", ": ", text)
+    # Strip leading comma artefact
+    text = re.sub(r"^[\s,]+", "", text)
+    return text.strip()
+
 
 def _truncate(text: str, limit: int = _MAX_TTS_CHARS) -> str:
-    """Strip markdown symbols and truncate to the nearest sentence end."""
-    text = re.sub(r"[*_`#\[\]()]", "", text).strip()
+    """Clean markdown and truncate to the nearest sentence end."""
+    text = _clean_for_tts(text)
     if len(text) <= limit:
         return text
     cut = text[:limit]
-    # Try to break at the last sentence boundary
-    for sep in (".", "!", "?", "\n"):
+    for sep in (".", "!", "?"):
         idx = cut.rfind(sep)
         if idx > limit // 2:
             return cut[: idx + 1].strip()
@@ -58,7 +74,7 @@ def load() -> None:
     print("[tts] Model loaded.")
 
 
-def speak(text: str) -> str:
+def speak(text: str, filename: str | None = None) -> str:
     """
     Convert text to Kyrgyz speech. Returns absolute path to the generated wav file.
     Loads model on demand, unloads after each call to free VRAM.
@@ -71,10 +87,13 @@ def speak(text: str) -> str:
 
         output_dir = _PROJECT_ROOT / _cfg["tts"]["output_dir"].lstrip("./")
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = str(output_dir / f"{uuid.uuid4().hex[:12]}.wav")
+        fname = filename if filename else f"{uuid.uuid4().hex[:12]}.wav"
+        output_path = str(output_dir / fname)
 
-        audio, _ = _model(_truncate(text))
-        _model.save_audio(audio, output_path, sample_rate=22050)
+        clean = _truncate(text)
+        print(f"[tts] synthesizing: {repr(clean)}")
+        audio, _ = _model(clean)
+        _model.save_audio(audio, output_path)
         print(f"[tts] Saved: {output_path}")
         return output_path
     finally:

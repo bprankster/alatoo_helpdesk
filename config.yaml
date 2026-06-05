@@ -44,7 +44,7 @@ stt:
 tts:
   model: "nineninesix/kani-tts-400m-ky"
   enabled_platforms: ["web"]
-  output_dir: "./audio_responses"
+  output_dir: "./audio_out"
 
 orientation:
   max_questions: 5

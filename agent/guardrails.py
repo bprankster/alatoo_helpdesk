@@ -38,6 +38,10 @@ def is_injection(text: str) -> bool:
 
 
 def is_on_topic(text: str) -> bool:
+    # Short messages (≤5 chars) are single-letter survey answers or greetings —
+    # too short to be off-topic content, let the agent handle them.
+    if len(text.strip()) <= 5:
+        return True
     lower = text.lower()
     return any(kw in lower for kw in DOMAIN_KEYWORDS)
 
